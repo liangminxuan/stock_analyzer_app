@@ -17,7 +17,6 @@ workflows:
           flutter build apk --release
       - name: Publish to GitHub Releases
         script: |
-          # 获取 APK 文件
           APK_PATH=$(find build -name "*.apk" -type f | head -1)
           if [ -z "$APK_PATH" ]; then
             echo "APK not found!"
@@ -25,11 +24,10 @@ workflows:
           fi
           echo "Found APK: $APK_PATH"
           
-          # 创建 GitHub Release
           TIMESTAMP=$(date +%Y%m%d_%H%M%S)
           TAG_NAME="v1.0.0-$TIMESTAMP"
           
-          curl --noproxy '*' -X POST \
+          curl -X POST \
             -H "Authorization: token $GITHUB_TOKEN" \
             -H "Accept: application/vnd.github.v3+json" \
             -d "{\"tag_name\":\"$TAG_NAME\",\"name\":\"Stock Analyzer $TAG_NAME\",\"body\":\"Automated build from Codemagic\",\"draft\":false,\"prerelease\":false}" \
