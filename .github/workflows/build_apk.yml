@@ -23,21 +23,25 @@ jobs:
           flutter-version: '3.16.0'
           channel: 'stable'
       
-      - name: Clean and Fix Gradle
+      - name: Fix Gradle Wrapper
         run: |
-          rm -rf android/.gradle
+          # Remove cached gradle
           rm -rf ~/.gradle
+          rm -rf android/.gradle
+          # Make gradlew executable
           chmod +x android/gradlew
-          # 修复 gradle wrapper 权限
-          find android -name "*.sh" -exec chmod +x {} \; 2>/dev/null || true
+          # Fix gradle binary permissions in wrapper
+          find ~/.gradle -name "gradle" -type f -exec chmod +x {} \; 2>/dev/null || true
       
       - name: Get dependencies
         run: flutter pub get
       
       - name: Build APK
         run: |
-          # 使用 flutter 自带的 gradle 处理
-          export GRADLE_OPTS="-Dorg.gradle.daemon=false"
+          cd android
+          # Download gradle wrapper if needed
+          ./gradlew --version || true
+          cd ..
           flutter build apk --release
       
       - name: Upload APK
