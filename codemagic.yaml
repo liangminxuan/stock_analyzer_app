@@ -7,19 +7,11 @@ workflows:
       flutter: stable
       java: 17
     scripts:
-      - name: Install Gradle
-        script: |
-          # 使用 Homebrew 安装 Gradle
-          brew install gradle || true
-          gradle --version
       - name: Get dependencies
         script: |
           flutter pub get
       - name: Build APK
         script: |
-          # 使用系统 Gradle
-          cd android
-          gradle assembleRelease --no-daemon
-          cd ..
+          flutter build apk --release
     artifacts:
       - build/**/outputs/**/*.apk
