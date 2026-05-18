@@ -1,0 +1,1 @@
+ /workspace/stock_analyzer_app/.dart_tool/flutter_build/bfbfde4ba70a9865c7cdbf270d64a260/native_assets.yaml: 

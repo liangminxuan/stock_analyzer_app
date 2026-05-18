@@ -1,0 +1,34 @@
+name: stock_analyzer_app
+description: 股票分析助手 - AI驱动的股票投资分析APP
+
+publish_to: 'none'
+
+version: 1.0.0+1
+
+environment:
+  sdk: '>=3.0.0 <4.0.0'
+
+dependencies:
+  flutter:
+    sdk: flutter
+
+  # 网络请求
+  dio: ^5.4.0
+
+  # 状态管理
+  provider: ^6.1.1
+
+  # 图表
+  fl_chart: ^0.66.0
+
+  # UI组件
+  flutter_screenutil: ^5.9.0
+  shimmer: ^3.0.0
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^3.0.1
+
+flutter:
+  uses-material-design: true

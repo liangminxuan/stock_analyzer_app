@@ -1,0 +1,10 @@
+[
+    {
+        "merged": "com.example.stock_analyzer_app-merged_res-25:/mipmap-hdpi_ic_launcher.png.flat",
+        "source": "com.example.stock_analyzer_app-main-26:/mipmap-hdpi/ic_launcher.png"
+    },
+    {
+        "merged": "com.example.stock_analyzer_app-merged_res-25:/drawable_ic_launcher_foreground.xml.flat",
+        "source": "com.example.stock_analyzer_app-main-26:/drawable/ic_launcher_foreground.xml"
+    }
+]
