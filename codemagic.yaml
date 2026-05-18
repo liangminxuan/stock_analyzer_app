@@ -5,16 +5,26 @@ workflows:
     environment:
       flutter: stable
       java: 17
-      cocoapods: default
     scripts:
-      - name: Set up local properties
+      - name: Install Gradle
         script: |
-          echo "flutter.sdk=$CM_FLUTTER_SDK" >> "$CM_BUILD_DIR/android/local.properties"
+          if [ ! -d "$HOME/gradle" ]; then
+            curl -s "https://get.sdkman.io" | bash
+            source "$HOME/.sdkman/bin/sdkman-init.sh"
+            sdk install gradle 8.0
+          fi
+          export PATH="$HOME/.sdkman/candidates/gradle/current/bin:$PATH"
+          gradle --version
       - name: Get dependencies
         script: |
           flutter pub get
       - name: Build APK
         script: |
-          flutter build apk --release
+          export PATH="$HOME/.sdkman/candidates/gradle/current/bin:$PATH"
+          cd android
+          gradle assembleRelease
+          cd ..
+        environment:
+          GRADLE_OPTS: -Dorg.gradle.daemon=false
     artifacts:
       - build/**/outputs/**/*.apk
