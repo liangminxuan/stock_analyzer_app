@@ -24,13 +24,20 @@ jobs:
           channel: 'stable'
       
       - name: Fix Gradle Permission
-        run: chmod +x android/gradlew && rm -rf android/.gradle
+        run: |
+          chmod +x android/gradlew
+          rm -rf android/.gradle
+          rm -rf ~/.gradle
       
       - name: Get dependencies
         run: flutter pub get
       
       - name: Build APK
-        run: flutter build apk --release
+        run: |
+          cd android
+          ./gradlew wrapper --gradle-version 8.0
+          cd ..
+          flutter build apk --release
       
       - name: Upload APK
         uses: actions/upload-artifact@v4
