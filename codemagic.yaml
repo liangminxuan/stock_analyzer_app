@@ -5,25 +5,12 @@ workflows:
     environment:
       flutter: stable
       java: 17
-      vars:
-        GRADLE_OPTS: "-Dorg.gradle.daemon=false"
     scripts:
-      - name: Install Gradle
-        script: |
-          if [ ! -d "$HOME/.sdkman" ]; then
-            curl -s "https://get.sdkman.io" | bash
-          fi
-          source "$HOME/.sdkman/bin/sdkman-init.sh"
-          sdk install gradle 8.0
-          gradle --version
       - name: Get dependencies
         script: |
           flutter pub get
       - name: Build APK
         script: |
-          source "$HOME/.sdkman/bin/sdkman-init.sh"
-          cd android
-          gradle assembleRelease
-          cd ..
+          flutter build apk --release
     artifacts:
       - build/**/outputs/**/*.apk
