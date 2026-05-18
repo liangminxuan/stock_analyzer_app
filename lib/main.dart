@@ -13,7 +13,7 @@ void main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
   // 初始化 API 服务（必须在 runApp 之前）
-  ApiService().init();
+  StockApiService().init();
 
   runApp(const MyApp());
 }
