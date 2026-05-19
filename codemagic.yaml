@@ -6,8 +6,6 @@ workflows:
     environment:
       flutter: 3.16.0
       java: 17
-      groups:
-        - github_token
     scripts:
       - name: Get dependencies
         script: |
@@ -27,8 +25,9 @@ workflows:
           TIMESTAMP=$(date +%Y%m%d_%H%M%S)
           TAG_NAME="v1.0.0-$TIMESTAMP"
           
+          # 使用 Codemagic 环境变量
           curl -X POST \
-            -H "Authorization: token $GITHUB_TOKEN" \
+            -H "Authorization: token $CM_GITHUB_TOKEN" \
             -H "Accept: application/vnd.github.v3+json" \
             -d "{\"tag_name\":\"$TAG_NAME\",\"name\":\"Stock Analyzer $TAG_NAME\",\"body\":\"Automated build from Codemagic\",\"draft\":false,\"prerelease\":false}" \
             "https://api.github.com/repos/liangminxuan/stock_analyzer_app/releases"
