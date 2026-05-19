@@ -34,8 +34,14 @@ class _StockDetailScreenState extends State<StockDetailScreen> {
 
   Future<void> _loadData() async {
     final provider = context.read<StockProvider>();
-    await provider.fetchStockDetail(widget.stockCode);
-    await provider.fetchKLineData(code: widget.stockCode);
+    // 去掉市场前缀，获取纯代码
+    String pureCode = widget.stockCode;
+    if (pureCode.startsWith('sh') || pureCode.startsWith('sz')) {
+      pureCode = pureCode.substring(2);
+    }
+    print('[StockDetailScreen] 加载数据，代码: $pureCode (原始: ${widget.stockCode})');
+    await provider.fetchStockDetail(pureCode);
+    await provider.fetchKLineData(code: pureCode);
   }
 
   @override
