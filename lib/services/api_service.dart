@@ -191,9 +191,16 @@ class StockApiService {
         return _getQuoteFromSina(code); // 降级到新浪
       }
 
-      return {
+      // 获取股票名称 - 优先使用预定义名称，其次使用API返回的名称
+      String stockName = _stockNames[code] ?? quote['f58']?.toString() ?? '';
+      // 如果名称为空，尝试从其他字段获取
+      if (stockName.isEmpty) {
+        stockName = quote['f57']?.toString() ?? code; // f57是股票代码，f58是名称
+      }
+      
+      final result = {
         'code': code,
-        'name': _stockNames[code] ?? quote['f58']?.toString() ?? '',
+        'name': stockName.isNotEmpty ? stockName : code,
         'market': market == '1' ? 'sh' : 'sz',
         'currentPrice': (quote['f43'] as num?)?.toDouble() ?? 0,
         'previousClose': (quote['f60'] as num?)?.toDouble() ?? 0,
@@ -208,6 +215,9 @@ class StockApiService {
         'pb': (quote['f167'] as num?)?.toDouble(),
         'marketCap': (quote['f116'] as num?)?.toDouble(),
       };
+      
+      print('[API] 获取行情成功: $code -> $stockName, price=${result['currentPrice']}');
+      return result;
     } catch (e) {
       print('[API] 东方财富行情失败: $code - $e');
       return _getQuoteFromSina(code); // 降级
@@ -236,10 +246,16 @@ class StockApiService {
 
       final currentPrice = double.tryParse(values[3]) ?? 0;
       final prevClose = double.tryParse(values[2]) ?? 0;
+      
+      // 获取股票名称，确保不为空
+      String stockName = _stockNames[code] ?? values[0];
+      if (stockName.isEmpty) {
+        stockName = code;
+      }
 
       return {
         'code': code,
-        'name': _stockNames[code] ?? values[0],
+        'name': stockName,
         'market': market,
         'currentPrice': currentPrice,
         'previousClose': prevClose,
@@ -258,9 +274,15 @@ class StockApiService {
   }
 
   Map<String, dynamic> _emptyQuote(String code) {
+    // 确保名称不为空，使用预定义名称或代码
+    String stockName = _stockNames[code] ?? '';
+    if (stockName.isEmpty) {
+      stockName = code;
+    }
+    
     return {
       'code': code,
-      'name': _stockNames[code] ?? '未知',
+      'name': stockName,
       'market': code.startsWith('6') ? 'sh' : 'sz',
       'currentPrice': 0.0,
       'previousClose': 0.0,

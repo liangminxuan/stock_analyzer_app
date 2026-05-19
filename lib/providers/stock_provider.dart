@@ -32,16 +32,25 @@ class StockProvider extends ChangeNotifier {
     notifyListeners();
 
     try {
+      print('[StockProvider] 开始获取股票详情: $code');
       final data = await _apiService.getStockQuote(code);
+      print('[StockProvider] 获取到数据: $data');
 
-      if (data['name'] != '数据加载中...') {
+      // 检查数据有效性 - 只要有价格和名称就认为是有效数据
+      final name = data['name']?.toString() ?? '';
+      final currentPrice = (data['currentPrice'] as num?)?.toDouble() ?? 0.0;
+      
+      if (name.isNotEmpty && name != '数据加载中...' && currentPrice > 0) {
         _currentStock = Stock.fromQuote(data);
+        print('[StockProvider] 股票详情加载成功: ${_currentStock?.name} ${_currentStock?.currentPrice}');
       } else {
-        _error = '无法获取股票数据';
+        _error = '无法获取股票数据 (name=$name, price=$currentPrice)';
+        print('[StockProvider] 数据无效: name=$name, price=$currentPrice');
       }
-    } catch (e) {
+    } catch (e, stackTrace) {
       _error = '加载失败: $e';
       print('[StockProvider] 获取详情失败: $e');
+      print('[StockProvider] 堆栈: $stackTrace');
     } finally {
       _isLoading = false;
       notifyListeners();
