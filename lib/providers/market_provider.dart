@@ -75,8 +75,8 @@ class MarketProvider extends ChangeNotifier {
           changePercent: changePercent,
           previousClose: price != 0 && changePercent != 0 ? price / (1 + changePercent/100) : 0,
           volume: (e['volume'] as num?)?.toInt() ?? 0,
-          high: (e['high'] as num?)?.toDouble() ?? 0.0,
-          low: (e['low'] as num?)?.toDouble() ?? 0.0,
+          highPrice: (e['high'] as num?)?.toDouble() ?? 0.0,
+          lowPrice: (e['low'] as num?)?.toDouble() ?? 0.0,
           openPrice: (e['open'] as num?)?.toDouble() ?? 0.0,
         );
       }).toList().cast<Stock>();
