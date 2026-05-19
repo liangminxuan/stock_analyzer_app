@@ -57,22 +57,35 @@ class MarketProvider extends ChangeNotifier {
       print('[MarketProvider] 获取到 ${data.length} 条股票');
 
       _hotStocks = data.map((e) {
-        return Stock.fromQuote({
-          'code': e['code'] ?? '',
-          'name': e['name'] ?? '未知',
-          'market': e['market'] ?? 'sh',
-          'currentPrice': (e['price'] ?? 0).toDouble(),
-          'changePercent': (e['changePercent'] ?? 0).toDouble(),
-          'volume': (e['volume'] ?? 0),
-          'high': (e['high'] ?? 0).toDouble(),
-          'low': (e['low'] ?? 0).toDouble(),
-          'open': (e['open'] ?? 0).toDouble(),
-        });
+        final code = e['code']?.toString() ?? '';
+        final name = e['name']?.toString() ?? '未知';
+        final market = e['market']?.toString() ?? (code.startsWith('6') ? 'sh' : 'sz');
+        // API返回的是price，但Stock.fromQuote期望currentPrice
+        final price = (e['price'] as num?)?.toDouble() ?? 0.0;
+        final changePercent = (e['changePercent'] as num?)?.toDouble() ?? 0.0;
+        
+        print('[MarketProvider] 股票: $code $name 价格: $price 涨跌: $changePercent%');
+        
+        // 使用完整字段构建Stock
+        return Stock(
+          code: code,
+          name: name,
+          market: market,
+          currentPrice: price,
+          changePercent: changePercent,
+          previousClose: price != 0 && changePercent != 0 ? price / (1 + changePercent/100) : 0,
+          volume: (e['volume'] as num?)?.toInt() ?? 0,
+          high: (e['high'] as num?)?.toDouble() ?? 0.0,
+          low: (e['low'] as num?)?.toDouble() ?? 0.0,
+          openPrice: (e['open'] as num?)?.toDouble() ?? 0.0,
+        );
       }).toList().cast<Stock>();
 
       notifyListeners();
     } catch (e) {
       print('[MarketProvider] 获取热门股票失败: $e');
+      _error = '获取热门股票失败: $e';
+      notifyListeners();
     }
   }
 

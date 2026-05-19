@@ -17,6 +17,9 @@ class MarketScreen extends StatefulWidget {
 }
 
 class _MarketScreenState extends State<MarketScreen> with AutomaticKeepAliveClientMixin {
+  int _selectedCategory = 0;
+  final List<String> _categories = ['全部', '沪市', '深市', '创业板', '科创板'];
+  
   @override
   bool get wantKeepAlive => true;
 
@@ -24,8 +27,32 @@ class _MarketScreenState extends State<MarketScreen> with AutomaticKeepAliveClie
   void initState() {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      context.read<MarketProvider>().fetchHotStocks();
+      _loadData();
     });
+  }
+
+  Future<void> _loadData() async {
+    await context.read<MarketProvider>().fetchHotStocks();
+  }
+
+  List<dynamic> _filterStocksByCategory(List<dynamic> stocks, int category) {
+    if (category == 0) return stocks; // 全部
+    
+    return stocks.where((stock) {
+      final code = stock.code.toString();
+      switch (category) {
+        case 1: // 沪市
+          return code.startsWith('6') || code.startsWith('5');
+        case 2: // 深市
+          return code.startsWith('0') || code.startsWith('3');
+        case 3: // 创业板
+          return code.startsWith('300');
+        case 4: // 科创板
+          return code.startsWith('688');
+        default:
+          return true;
+      }
+    }).toList();
   }
 
   @override
@@ -93,12 +120,14 @@ class _MarketScreenState extends State<MarketScreen> with AutomaticKeepAliveClie
                   );
                 }
 
+                final filteredStocks = _filterStocksByCategory(provider.hotStocks, _selectedCategory);
+
                 return RefreshIndicator(
-                  onRefresh: () => provider.fetchHotStocks(),
+                  onRefresh: () => _loadData(),
                   child: ListView.builder(
-                    itemCount: provider.hotStocks.length,
+                    itemCount: filteredStocks.length,
                     itemBuilder: (context, index) {
-                      final stock = provider.hotStocks[index];
+                      final stock = filteredStocks[index];
                       return StockCard(
                         stock: stock,
                         onTap: () {
@@ -126,23 +155,23 @@ class _MarketScreenState extends State<MarketScreen> with AutomaticKeepAliveClie
 
   /// 构建分类标签
   Widget _buildCategoryTabs() {
-    final categories = ['全部', '沪市', '深市', '创业板', '科创板'];
-    
     return Container(
       height: 48.h,
       padding: EdgeInsets.symmetric(horizontal: 16.w),
       child: ListView.builder(
         scrollDirection: Axis.horizontal,
-        itemCount: categories.length,
+        itemCount: _categories.length,
         itemBuilder: (context, index) {
-          final isSelected = index == 0;
+          final isSelected = index == _selectedCategory;
           return Container(
             margin: EdgeInsets.only(right: 12.w),
             child: FilterChip(
-              label: Text(categories[index]),
+              label: Text(_categories[index]),
               selected: isSelected,
               onSelected: (selected) {
-                // TODO: 切换分类
+                setState(() {
+                  _selectedCategory = index;
+                });
               },
             ),
           );
