@@ -6,8 +6,8 @@ workflows:
     environment:
       flutter: 3.16.0
       java: 17
-      env:
-        CM_REPO_URL: https://github.com/liangminxuan/stock_analyzer_app
+      groups:
+        - github_token
     scripts:
       - name: Get dependencies
         script: |
