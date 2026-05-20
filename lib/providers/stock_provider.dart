@@ -77,7 +77,7 @@ class StockProvider extends ChangeNotifier {
       final data = await _apiService.getKLineData(
         code: code,
         period: period,
-        limit: limit,
+        count: limit,
       );
 
       // 先创建基础K线数据
@@ -176,7 +176,7 @@ class StockProvider extends ChangeNotifier {
       final data = await _apiService.getKLineData(
         code: code,
         period: 'day',
-        limit: 60,
+        count: 60,
       );
 
       if (data.isEmpty) {
