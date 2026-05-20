@@ -1,9 +1,8 @@
 import 'dart:convert';
-import 'dart:math';
 import 'package:dio/dio.dart';
 
-/// 股票数据API服务 - 直接调用东方财富/新浪/腾讯 HTTP API
-/// 参考 akshare 实现，无需 Python 后端
+/// 股票数据API服务 - 使用腾讯财经作为主要数据源
+/// 腾讯接口稳定、免费、无需认证
 class StockApiService {
   static final StockApiService _instance = StockApiService._internal();
   factory StockApiService() => _instance;
@@ -11,10 +10,6 @@ class StockApiService {
 
   late Dio _dio;
   bool _initialized = false;
-  final Random _random = Random();
-
-  // 上次请求时间（用于速率限制）
-  DateTime _lastRequestTime = DateTime.now();
 
   Dio get dio {
     if (!_initialized) init();
@@ -23,46 +18,19 @@ class StockApiService {
 
   void init() {
     _dio = Dio(BaseOptions(
-      connectTimeout: const Duration(seconds: 15),
-      receiveTimeout: const Duration(seconds: 15),
+      connectTimeout: const Duration(seconds: 10),
+      receiveTimeout: const Duration(seconds: 10),
       responseType: ResponseType.plain,
       headers: {
-        'User-Agent': _getRandomUA(),
-        'Accept': '*/*',
-        'Accept-Language': 'zh-CN,zh;q=0.9',
-        'Referer': 'https://quote.eastmoney.com/',
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+        'Referer': 'https://gu.qq.com/',
       },
     ));
     _initialized = true;
+    print('[API] 服务初始化完成 - 使用腾讯财经数据源');
   }
 
-  // ==================== 防爬策略 ====================
-
-  /// 随机 User-Agent 池
-  static const List<String> _userAgents = [
-    'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-    'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-    'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:121.0) Gecko/20100101 Firefox/121.0',
-    'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.2 Safari/605.1.15',
-    'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-  ];
-
-  String _getRandomUA() => _userAgents[_random.nextInt(_userAgents.length)];
-
-  /// 速率限制：每次请求前随机休眠 0.3-0.8 秒
-  Future<void> _rateLimit() async {
-    final now = DateTime.now();
-    final elapsed = now.difference(_lastRequestTime).inMilliseconds;
-    if (elapsed < 300) {
-      await Future.delayed(Duration(milliseconds: 300 - elapsed));
-    }
-    // 随机抖动
-    await Future.delayed(Duration(milliseconds: 300 + _random.nextInt(500)));
-    _lastRequestTime = DateTime.now();
-  }
-
-  // ==================== 股票名称映射 ====================
-
+  // 预定义的股票名称（备用）
   static const Map<String, String> _stockNames = {
     '600519': '贵州茅台', '601318': '中国平安', '600036': '招商银行',
     '600276': '恒瑞医药', '601012': '隆基绿能', '600900': '长江电力',
@@ -80,279 +48,272 @@ class StockApiService {
     '688981': '中芯国际', '688599': '天合光能', '688111': '金山办公',
   };
 
-  // 本地模拟股票数据（当 API 失败时使用）
-  static const Map<String, Map<String, dynamic>> _mockStockData = {
-    '600519': {'name': '贵州茅台', 'price': 1856.00, 'change': 2.35, 'changePercent': 0.13, 'high': 1870.00, 'low': 1840.00, 'open': 1845.00, 'volume': 1250000},
-    '601318': {'name': '中国平安', 'price': 48.56, 'change': 0.82, 'changePercent': 1.72, 'high': 49.20, 'low': 47.80, 'open': 48.00, 'volume': 85000000},
-    '600036': {'name': '招商银行', 'price': 35.28, 'change': 0.45, 'changePercent': 1.29, 'high': 35.80, 'low': 34.90, 'open': 35.00, 'volume': 62000000},
-    '600276': {'name': '恒瑞医药', 'price': 42.15, 'change': -0.35, 'changePercent': -0.82, 'high': 42.80, 'low': 41.90, 'open': 42.50, 'volume': 28000000},
-    '601012': {'name': '隆基绿能', 'price': 18.92, 'change': 0.28, 'changePercent': 1.50, 'high': 19.20, 'low': 18.65, 'open': 18.70, 'volume': 95000000},
-    '600900': {'name': '长江电力', 'price': 28.85, 'change': 0.15, 'changePercent': 0.52, 'high': 29.10, 'low': 28.70, 'open': 28.80, 'volume': 35000000},
-    '601398': {'name': '工商银行', 'price': 5.18, 'change': 0.02, 'changePercent': 0.39, 'high': 5.22, 'low': 5.15, 'open': 5.16, 'volume': 180000000},
-    '600030': {'name': '中信证券', 'price': 18.56, 'change': 0.35, 'changePercent': 1.92, 'high': 18.90, 'low': 18.20, 'open': 18.30, 'volume': 72000000},
-    '601166': {'name': '兴业银行', 'price': 16.28, 'change': 0.18, 'changePercent': 1.12, 'high': 16.50, 'low': 16.10, 'open': 16.15, 'volume': 45000000},
-    '600887': {'name': '伊利股份', 'price': 28.35, 'change': -0.25, 'changePercent': -0.87, 'high': 28.80, 'low': 28.10, 'open': 28.60, 'volume': 32000000},
-    '000001': {'name': '平安银行', 'price': 11.85, 'change': 0.15, 'changePercent': 1.28, 'high': 12.00, 'low': 11.70, 'open': 11.75, 'volume': 85000000},
-    '000002': {'name': '万科A', 'price': 8.56, 'change': -0.12, 'changePercent': -1.38, 'high': 8.75, 'low': 8.45, 'open': 8.68, 'volume': 120000000},
-    '000333': {'name': '美的集团', 'price': 58.92, 'change': 0.85, 'changePercent': 1.46, 'high': 59.80, 'low': 58.10, 'open': 58.20, 'volume': 25000000},
-    '000651': {'name': '格力电器', 'price': 32.15, 'change': 0.28, 'changePercent': 0.88, 'high': 32.60, 'low': 31.90, 'open': 32.00, 'volume': 38000000},
-    '000858': {'name': '五粮液', 'price': 142.56, 'change': 1.85, 'changePercent': 1.31, 'high': 144.20, 'low': 141.00, 'open': 141.50, 'volume': 8500000},
-    '300750': {'name': '宁德时代', 'price': 185.35, 'change': 3.56, 'changePercent': 1.96, 'high': 188.00, 'low': 182.50, 'open': 183.00, 'volume': 15000000},
-    '300015': {'name': '爱尔眼科', 'price': 15.28, 'change': 0.18, 'changePercent': 1.19, 'high': 15.50, 'low': 15.10, 'open': 15.15, 'volume': 45000000},
-    '300059': {'name': '东方财富', 'price': 14.85, 'change': 0.25, 'changePercent': 1.71, 'high': 15.10, 'low': 14.60, 'open': 14.70, 'volume': 85000000},
-    '002594': {'name': '比亚迪', 'price': 256.80, 'change': 5.35, 'changePercent': 2.13, 'high': 260.00, 'low': 252.50, 'open': 253.00, 'volume': 12000000},
-    '002475': {'name': '立讯精密', 'price': 32.56, 'change': 0.45, 'changePercent': 1.40, 'high': 33.00, 'low': 32.10, 'open': 32.20, 'volume': 35000000},
-    '601888': {'name': '中国中免', 'price': 68.92, 'change': 1.25, 'changePercent': 1.85, 'high': 70.00, 'low': 68.00, 'open': 68.20, 'volume': 18000000},
-    '002415': {'name': '海康威视', 'price': 28.35, 'change': 0.38, 'changePercent': 1.36, 'high': 28.80, 'low': 28.00, 'open': 28.10, 'volume': 45000000},
-    '601288': {'name': '农业银行', 'price': 4.28, 'change': 0.02, 'changePercent': 0.47, 'high': 4.32, 'low': 4.25, 'open': 4.26, 'volume': 150000000},
-    '601939': {'name': '建设银行', 'price': 6.85, 'change': 0.05, 'changePercent': 0.74, 'high': 6.92, 'low': 6.80, 'open': 6.82, 'volume': 85000000},
-    '601988': {'name': '中国银行', 'price': 4.65, 'change': 0.02, 'changePercent': 0.43, 'high': 4.68, 'low': 4.62, 'open': 4.63, 'volume': 120000000},
-    '600000': {'name': '浦发银行', 'price': 8.15, 'change': 0.08, 'changePercent': 0.99, 'high': 8.25, 'low': 8.08, 'open': 8.10, 'volume': 65000000},
-    '002230': {'name': '科大讯飞', 'price': 42.85, 'change': 0.65, 'changePercent': 1.54, 'high': 43.50, 'low': 42.20, 'open': 42.30, 'volume': 28000000},
-    '300760': {'name': '迈瑞医疗', 'price': 285.60, 'change': 4.35, 'changePercent': 1.55, 'high': 290.00, 'low': 282.00, 'open': 283.00, 'volume': 3500000},
-    '603288': {'name': '海天味业', 'price': 38.56, 'change': 0.42, 'changePercent': 1.10, 'high': 39.00, 'low': 38.20, 'open': 38.30, 'volume': 15000000},
-    '600309': {'name': '万华化学', 'price': 85.28, 'change': 1.35, 'changePercent': 1.61, 'high': 86.50, 'low': 84.00, 'open': 84.20, 'volume': 12000000},
-    '002142': {'name': '宁波银行', 'price': 18.92, 'change': 0.22, 'changePercent': 1.18, 'high': 19.20, 'low': 18.70, 'open': 18.75, 'volume': 32000000},
-    '600809': {'name': '山西汾酒', 'price': 218.56, 'change': 3.25, 'changePercent': 1.51, 'high': 222.00, 'low': 216.00, 'open': 217.00, 'volume': 4500000},
-    '000568': {'name': '泸州老窖', 'price': 168.35, 'change': 2.15, 'changePercent': 1.29, 'high': 170.50, 'low': 166.50, 'open': 167.00, 'volume': 5500000},
-    '300124': {'name': '汇川技术', 'price': 62.85, 'change': 0.95, 'changePercent': 1.54, 'high': 63.80, 'low': 62.00, 'open': 62.20, 'volume': 18000000},
-    '601668': {'name': '中国建筑', 'price': 5.35, 'change': 0.03, 'changePercent': 0.56, 'high': 5.40, 'low': 5.32, 'open': 5.33, 'volume': 180000000},
-    '601857': {'name': '中国石油', 'price': 8.56, 'change': 0.08, 'changePercent': 0.94, 'high': 8.65, 'low': 8.48, 'open': 8.50, 'volume': 85000000},
-    '600028': {'name': '中国石化', 'price': 5.85, 'change': 0.05, 'changePercent': 0.86, 'high': 5.92, 'low': 5.80, 'open': 5.82, 'volume': 95000000},
-    '601728': {'name': '中国电信', 'price': 5.68, 'change': 0.04, 'changePercent': 0.71, 'high': 5.72, 'low': 5.65, 'open': 5.66, 'volume': 120000000},
-    '600050': {'name': '中国联通', 'price': 4.85, 'change': 0.03, 'changePercent': 0.62, 'high': 4.88, 'low': 4.82, 'open': 4.83, 'volume': 150000000},
-    '688981': {'name': '中芯国际', 'price': 48.56, 'change': 0.85, 'changePercent': 1.78, 'high': 49.50, 'low': 47.80, 'open': 48.00, 'volume': 8500000},
-    '688599': {'name': '天合光能', 'price': 12.85, 'change': 0.25, 'changePercent': 1.98, 'high': 13.10, 'low': 12.60, 'open': 12.70, 'volume': 25000000},
-    '688111': {'name': '金山办公', 'price': 285.60, 'change': 5.35, 'changePercent': 1.91, 'high': 290.00, 'low': 281.00, 'open': 282.00, 'volume': 2500000},
-  };
-
   static const Map<String, String> _indexNames = {
     '000001': '上证指数', '399001': '深证成指', '399006': '创业板指',
     '000016': '上证50', '000300': '沪深300',
   };
 
-  // ==================== 大盘指数 ====================
+  // ==================== 腾讯财经接口 ====================
 
-  /// 获取大盘指数（东方财富）
-  Future<List<Map<String, dynamic>>> getMarketIndices() async {
-    try {
-      await _rateLimit();
-
-      // 东方财富指数接口
-      final url = 'https://push2.eastmoney.com/api/qt/ulist.np/get'
-          '?fltt=2&invt=2&fields=f3,f12,f13,f14,f2,f4,f1'
-          '&secids=1.000001,0.399001,0.399006,1.000016,1.000300';
-
-      final response = await _dio.get(
-        url,
-        options: Options(headers: {'User-Agent': _getRandomUA()}),
-      );
-
-      final data = jsonDecode(response.data.toString());
-      final diff = data['data']?['diff'] as List?;
-
-      if (diff == null || diff.isEmpty) {
-        return _getIndicesFromSina(); // 降级到新浪
-      }
-
-      return diff.map((e) {
-        final code = e['f12']?.toString() ?? '';
-        return {
-          'code': code,
-          'name': _indexNames[code] ?? e['f14']?.toString() ?? '',
-          'currentPoint': (e['f2'] as num?)?.toDouble() ?? 0,
-          'change': (e['f4'] as num?)?.toDouble() ?? 0,
-          'changePercent': (e['f3'] as num?)?.toDouble() ?? 0,
-        };
-      }).toList();
-    } catch (e) {
-      print('[API] 东方财富指数失败: $e');
-      return _getIndicesFromSina(); // 降级
-    }
-  }
-
-  /// 新浪指数接口（降级方案）
-  Future<List<Map<String, dynamic>>> _getIndicesFromSina() async {
-    final indices = ['s_sh000001', 's_sz399001', 's_sz399006'];
-    final results = <Map<String, dynamic>>[];
-
-    try {
-      await _rateLimit();
-      final response = await _dio.get(
-        'https://hq.sinajs.cn/list=${indices.join(',')}',
-        options: Options(
-          headers: {'Referer': 'https://finance.sina.com.cn'},
-        ),
-      );
-
-      final data = response.data.toString();
-      for (final index in indices) {
-        final regex = RegExp('$index="([^"]*)"');
-        final match = regex.firstMatch(data);
-        if (match != null) {
-          final values = match.group(1)!.split(',');
-          if (values.length >= 4) {
-            final code = index.substring(2);
-            results.add({
-              'code': code,
-              'name': _indexNames[code] ?? values[0],
-              'currentPoint': double.tryParse(values[1]) ?? 0,
-              'change': double.tryParse(values[2]) ?? 0,
-              'changePercent': double.tryParse(values[3]) ?? 0,
-            });
-          }
-        }
-      }
-    } catch (e) {
-      print('[API] 新浪指数也失败: $e');
-    }
-
-    return results;
-  }
-
-  // ==================== 实时行情 ====================
-
-  /// 获取股票实时行情（优先使用本地模拟数据）
+  /// 获取股票实时行情（腾讯财经）
   Future<Map<String, dynamic>> getStockQuote(String code) async {
-    print('[API] 获取股票行情: $code');
-    
-    // 优先使用本地模拟数据
-    if (_mockStockData.containsKey(code)) {
-      final mock = _mockStockData[code]!;
-      final result = {
-        'code': code,
-        'name': mock['name'],
-        'market': code.startsWith('6') ? 'sh' : 'sz',
-        'currentPrice': mock['price'],
-        'previousClose': mock['price'] - mock['change'],
-        'open': mock['open'],
-        'high': mock['high'],
-        'low': mock['low'],
-        'volume': mock['volume'],
-        'turnover': mock['price'] * mock['volume'],
-        'change': mock['change'],
-        'changePercent': mock['changePercent'],
-      };
-      print('[API] 使用本地数据: ${result['name']} 价格=${result['currentPrice']}');
-      return result;
-    }
-    
-    // 如果本地没有，尝试 API
     try {
-      await _rateLimit();
-
-      // 判断市场
-      final market = code.startsWith('6') || code.startsWith('5') ? '1' : '0';
-
-      // 东方财富实时行情接口
-      final url = 'https://push2.eastmoney.com/api/qt/stock/get'
-          '?fltt=2&invt=2&fields=f57,f58,f43,f169,f170,f46,f44,f51,f168,f47,f48,f60,f45,f52,f50,f49,f171,f113,f114,f115,f117'
-          '&secid=$market.$code';
-
-      final response = await _dio.get(
-        url,
-        options: Options(headers: {'User-Agent': _getRandomUA()}),
-      );
-
-      final data = jsonDecode(response.data.toString());
-      final quote = data['data'];
-
-      if (quote == null) {
-        return _getQuoteFromSina(code); // 降级到新浪
-      }
-
-      // 获取股票名称 - 优先使用预定义名称，其次使用API返回的名称
-      String stockName = _stockNames[code] ?? quote['f58']?.toString() ?? '';
-      // 如果名称为空，尝试从其他字段获取
-      if (stockName.isEmpty) {
-        stockName = quote['f57']?.toString() ?? code; // f57是股票代码，f58是名称
-      }
+      // 确定市场前缀
+      String marketCode = _getTencentCode(code);
       
-      final result = {
-        'code': code,
-        'name': stockName.isNotEmpty ? stockName : code,
-        'market': market == '1' ? 'sh' : 'sz',
-        'currentPrice': (quote['f43'] as num?)?.toDouble() ?? 0,
-        'previousClose': (quote['f60'] as num?)?.toDouble() ?? 0,
-        'open': (quote['f46'] as num?)?.toDouble() ?? 0,
-        'high': (quote['f44'] as num?)?.toDouble() ?? 0,
-        'low': (quote['f51'] as num?)?.toDouble() ?? 0,
-        'volume': (quote['f47'] as num?)?.toInt() ?? 0,
-        'turnover': (quote['f48'] as num?)?.toDouble() ?? 0,
-        'change': (quote['f169'] as num?)?.toDouble() ?? 0,
-        'changePercent': (quote['f170'] as num?)?.toDouble() ?? 0,
-        'pe': (quote['f162'] as num?)?.toDouble(),
-        'pb': (quote['f167'] as num?)?.toDouble(),
-        'marketCap': (quote['f116'] as num?)?.toDouble(),
-      };
+      final url = 'https://qt.gtimg.cn/q=$marketCode';
+      print('[API] 请求腾讯接口: $url');
       
-      print('[API] 获取行情成功: $code -> $stockName, price=${result['currentPrice']}');
-      return result;
-    } catch (e) {
-      print('[API] 东方财富行情失败: $code - $e');
-      return _getQuoteFromSina(code); // 降级
-    }
-  }
-
-  /// 新浪行情接口（降级方案）
-  Future<Map<String, dynamic>> _getQuoteFromSina(String code) async {
-    try {
-      await _rateLimit();
-
-      final market = code.startsWith('6') || code.startsWith('5') ? 'sh' : 'sz';
-      final response = await _dio.get(
-        'https://hq.sinajs.cn/list=$market$code',
-        options: Options(headers: {'Referer': 'https://finance.sina.com.cn'}),
-      );
-
+      final response = await _dio.get(url);
       final data = response.data.toString();
-      final regex = RegExp('var hq_str_$market$code="([^"]*)"');
-      final match = regex.firstMatch(data);
-
-      if (match == null) return _emptyQuote(code);
-
-      final values = match.group(1)!.split(',');
-      if (values.length < 33) return _emptyQuote(code);
-
-      final currentPrice = double.tryParse(values[3]) ?? 0;
-      final prevClose = double.tryParse(values[2]) ?? 0;
       
-      // 获取股票名称，确保不为空
-      String stockName = _stockNames[code] ?? values[0];
-      if (stockName.isEmpty) {
-        stockName = code;
+      // 解析腾讯数据
+      final result = _parseTencentData(data, code);
+      if (result != null) {
+        print('[API] 获取行情成功: ${result['name']} ${result['currentPrice']}');
+        return result;
       }
-
-      return {
-        'code': code,
-        'name': stockName,
-        'market': market,
-        'currentPrice': currentPrice,
-        'previousClose': prevClose,
-        'open': double.tryParse(values[1]) ?? 0,
-        'high': double.tryParse(values[4]) ?? 0,
-        'low': double.tryParse(values[5]) ?? 0,
-        'volume': int.tryParse(values[8]) ?? 0,
-        'turnover': double.tryParse(values[9]) ?? 0,
-        'change': currentPrice - prevClose,
-        'changePercent': prevClose != 0 ? ((currentPrice - prevClose) / prevClose) * 100 : 0,
-      };
+      
+      // 返回默认数据
+      return _emptyQuote(code);
     } catch (e) {
-      print('[API] 新浪行情也失败: $code - $e');
+      print('[API] 获取行情失败: $code - $e');
       return _emptyQuote(code);
     }
   }
 
-  Map<String, dynamic> _emptyQuote(String code) {
-    // 确保名称不为空，使用预定义名称或代码
-    String stockName = _stockNames[code] ?? '';
-    if (stockName.isEmpty) {
-      stockName = code;
+  /// 解析腾讯财经数据
+  Map<String, dynamic>? _parseTencentData(String data, String code) {
+    try {
+      // 提取引号内的内容
+      final regex = RegExp(r'v_[^=]+="([^"]*)"');
+      final match = regex.firstMatch(data);
+      if (match == null) return null;
+      
+      final content = match.group(1)!;
+      final fields = content.split('~');
+      
+      if (fields.length < 34) return null;
+      
+      // 腾讯数据字段解析
+      final name = fields[1];
+      final currentPrice = double.tryParse(fields[3]) ?? 0;
+      final prevClose = double.tryParse(fields[4]) ?? 0;
+      final openPrice = double.tryParse(fields[5]) ?? 0;
+      final volume = int.tryParse(fields[6]) ?? 0;
+      final high = double.tryParse(fields[32]) ?? 0;
+      final low = double.tryParse(fields[33]) ?? 0;
+      final change = double.tryParse(fields[30]) ?? 0;
+      final changePercent = double.tryParse(fields[31]) ?? 0;
+      
+      return {
+        'code': code,
+        'name': name.isNotEmpty ? name : (_stockNames[code] ?? code),
+        'market': code.startsWith('6') ? 'sh' : 'sz',
+        'currentPrice': currentPrice,
+        'previousClose': prevClose,
+        'open': openPrice,
+        'high': high,
+        'low': low,
+        'volume': volume,
+        'turnover': 0.0,
+        'change': change,
+        'changePercent': changePercent,
+      };
+    } catch (e) {
+      print('[API] 解析腾讯数据失败: $e');
+      return null;
     }
-    
+  }
+
+  /// 获取股票列表（热门股票）
+  Future<List<Map<String, dynamic>>> getStockList({int page = 1, int pageSize = 20}) async {
+    try {
+      // 获取热门股票代码列表
+      final hotCodes = [
+        '600519', '601318', '600036', '000333', '000651',
+        '300750', '002594', '601398', '600030', '601166',
+        '000858', '600887', '300015', '002475', '601888',
+        '002415', '601288', '601939', '601988', '600000',
+        '000001', '000002', '300059', '603288', '600309',
+        '002142', '600809', '300124', '601668', '601857',
+      ];
+      
+      // 批量获取行情
+      final codes = hotCodes.skip((page - 1) * pageSize).take(pageSize).toList();
+      if (codes.isEmpty) return [];
+      
+      // 构建腾讯代码列表
+      final tencentCodes = codes.map(_getTencentCode).join(',');
+      final url = 'https://qt.gtimg.cn/q=$tencentCodes';
+      print('[API] 批量请求: $url');
+      
+      final response = await _dio.get(url);
+      final data = response.data.toString();
+      
+      // 解析批量数据
+      final results = <Map<String, dynamic>>[];
+      final regex = RegExp(r'v_([^=]+)="([^"]*)"');
+      
+      for (final match in regex.allMatches(data)) {
+        final marketCode = match.group(1)!;
+        final content = match.group(2)!;
+        final fields = content.split('~');
+        
+        if (fields.length >= 34) {
+          final code = marketCode.replaceAll(RegExp(r'^sh|^sz'), '');
+          final name = fields[1];
+          final currentPrice = double.tryParse(fields[3]) ?? 0;
+          final changePercent = double.tryParse(fields[31]) ?? 0;
+          
+          results.add({
+            'code': code,
+            'name': name.isNotEmpty ? name : (_stockNames[code] ?? code),
+            'market': code.startsWith('6') ? 'sh' : 'sz',
+            'price': currentPrice,
+            'changePercent': changePercent,
+            'volume': int.tryParse(fields[6]) ?? 0,
+            'high': double.tryParse(fields[32]) ?? 0,
+            'low': double.tryParse(fields[33]) ?? 0,
+            'open': double.tryParse(fields[5]) ?? 0,
+          });
+        }
+      }
+      
+      print('[API] 获取到 ${results.length} 条股票数据');
+      return results;
+    } catch (e) {
+      print('[API] 获取股票列表失败: $e');
+      return _getDefaultHotStocks();
+    }
+  }
+
+  /// 获取市场指数
+  Future<List<Map<String, dynamic>>> getMarketIndices() async {
+    try {
+      final indices = ['sh000001', 'sz399001', 'sz399006'];
+      final url = 'https://qt.gtimg.cn/q=${indices.join(',')}';
+      
+      final response = await _dio.get(url);
+      final data = response.data.toString();
+      
+      final results = <Map<String, dynamic>>[];
+      final regex = RegExp(r'v_([^=]+)="([^"]*)"');
+      
+      for (final match in regex.allMatches(data)) {
+        final marketCode = match.group(1)!;
+        final content = match.group(2)!;
+        final fields = content.split('~');
+        
+        if (fields.length >= 34) {
+          final code = marketCode.replaceAll(RegExp(r'^sh|^sz'), '');
+          results.add({
+            'code': code,
+            'name': _indexNames[code] ?? fields[1],
+            'currentPoint': double.tryParse(fields[3]) ?? 0,
+            'change': double.tryParse(fields[30]) ?? 0,
+            'changePercent': double.tryParse(fields[31]) ?? 0,
+          });
+        }
+      }
+      
+      return results;
+    } catch (e) {
+      print('[API] 获取指数失败: $e');
+      return [
+        {'code': '000001', 'name': '上证指数', 'currentPoint': 3100.0, 'change': 0, 'changePercent': 0},
+        {'code': '399001', 'name': '深证成指', 'currentPoint': 9500.0, 'change': 0, 'changePercent': 0},
+        {'code': '399006', 'name': '创业板指', 'currentPoint': 1800.0, 'change': 0, 'changePercent': 0},
+      ];
+    }
+  }
+
+  /// 搜索股票
+  Future<List<Map<String, dynamic>>> searchStocks(String keyword) async {
+    try {
+      // 在预定义列表中搜索
+      final results = <Map<String, dynamic>>[];
+      
+      for (final entry in _stockNames.entries) {
+        if (entry.key.contains(keyword) || entry.value.contains(keyword)) {
+          results.add({
+            'code': entry.key,
+            'name': entry.value,
+            'market': entry.key.startsWith('6') ? 'sh' : 'sz',
+          });
+        }
+      }
+      
+      // 如果搜索结果不足，尝试获取实时数据
+      if (results.length < 5 && keyword.length == 6) {
+        final quote = await getStockQuote(keyword);
+        if (quote['currentPrice'] > 0) {
+          results.add(quote);
+        }
+      }
+      
+      return results.take(20).toList();
+    } catch (e) {
+      print('[API] 搜索失败: $e');
+      return [];
+    }
+  }
+
+  /// 获取K线数据
+  Future<List<Map<String, dynamic>>> getKLineData({
+    required String code,
+    String period = 'day',
+    int count = 100,
+  }) async {
+    try {
+      // 腾讯K线接口
+      final market = code.startsWith('6') ? 'sh' : 'sz';
+      final type = period == 'day' ? 'day' : period == 'week' ? 'week' : 'month';
+      
+      final url = 'https://web.ifzq.gtimg.cn/appstock/app/fwk/getkline'
+          '?_var=mk_$market$code'
+          '&param=$market$code,$type,,,$count,';
+      
+      final response = await _dio.get(url);
+      final data = response.data.toString();
+      
+      // 解析K线数据
+      final results = <Map<String, dynamic>>[];
+      final regex = RegExp(r'\[(\d+),([\d.]+),([\d.]+),([\d.]+),([\d.]+),(\d+),');
+      
+      for (final match in regex.allMatches(data)) {
+        results.add({
+          'time': match.group(1)!,
+          'open': double.tryParse(match.group(2)!) ?? 0,
+          'close': double.tryParse(match.group(3)!) ?? 0,
+          'high': double.tryParse(match.group(4)!) ?? 0,
+          'low': double.tryParse(match.group(5)!) ?? 0,
+          'volume': int.tryParse(match.group(6)!) ?? 0,
+        });
+      }
+      
+      return results;
+    } catch (e) {
+      print('[API] 获取K线失败: $e');
+      return [];
+    }
+  }
+
+  // ==================== 辅助方法 ====================
+
+  /// 获取腾讯格式的股票代码
+  String _getTencentCode(String code) {
+    if (code.startsWith('sh') || code.startsWith('sz')) {
+      return code;
+    }
+    return code.startsWith('6') || code.startsWith('5') ? 'sh$code' : 'sz$code';
+  }
+
+  /// 空数据
+  Map<String, dynamic> _emptyQuote(String code) {
     return {
       'code': code,
-      'name': stockName,
+      'name': _stockNames[code] ?? code,
       'market': code.startsWith('6') ? 'sh' : 'sz',
       'currentPrice': 0.0,
       'previousClose': 0.0,
@@ -366,303 +327,14 @@ class StockApiService {
     };
   }
 
-  // ==================== K线数据 ====================
-
-  /// 获取K线数据（东方财富）
-  Future<List<Map<String, dynamic>>> getKLineData({
-    required String code,
-    required String period,
-    int limit = 100,
-  }) async {
-    try {
-      await _rateLimit();
-
-      final market = code.startsWith('6') || code.startsWith('5') ? '1' : '0';
-
-      // 周期映射
-      final kltMap = {'day': '101', 'week': '102', 'month': '103'};
-      final klt = kltMap[period] ?? '101';
-
-      // 东方财富K线接口
-      final url = 'https://push2his.eastmoney.com/api/qt/stock/kline/get'
-          '?fields1=f1,f2,f3,f4,f5,f6,f7,f8,f9,f10,f11,f12,f13'
-          '&fields2=f51,f52,f53,f54,f55,f56,f57,f58,f59,f60,f61'
-          '&klt=$klt&fqt=1&secid=$market.$code&end=20500101'
-          '&lmt=$limit';
-
-      final response = await _dio.get(
-        url,
-        options: Options(headers: {'User-Agent': _getRandomUA()}),
-      );
-
-      final data = jsonDecode(response.data.toString());
-      final klines = data['data']?['klines'] as List?;
-
-      if (klines == null || klines.isEmpty) {
-        return _getKLineFromSina(code: code, period: period, limit: limit); // 降级
-      }
-
-      return klines.map((e) {
-        final parts = e.toString().split(',');
-        return {
-          'time': parts[0],
-          'open': double.tryParse(parts[1]) ?? 0,
-          'close': double.tryParse(parts[2]) ?? 0,
-          'high': double.tryParse(parts[3]) ?? 0,
-          'low': double.tryParse(parts[4]) ?? 0,
-          'volume': int.tryParse(parts[5]) ?? 0,
-          'amount': double.tryParse(parts[6]) ?? 0,
-          'changePercent': double.tryParse(parts[7]) ?? 0,
-        };
-      }).toList();
-    } catch (e) {
-      print('[API] 东方财富K线失败: $code - $e');
-      return _getKLineFromSina(code: code, period: period, limit: limit); // 降级
-    }
-  }
-
-  /// 新浪K线接口（降级方案）
-  Future<List<Map<String, dynamic>>> _getKLineFromSina({
-    required String code,
-    required String period,
-    int limit = 100,
-  }) async {
-    try {
-      await _rateLimit();
-
-      final market = code.startsWith('6') || code.startsWith('5') ? 'sh' : 'sz';
-
-      final scaleMap = {
-        'day': '240', 'week': '1680', 'month': '7200',
-      };
-      final scale = scaleMap[period] ?? '240';
-
-      final url = 'https://money.finance.sina.com.cn/quotes_service/api/json_v2.php/CN_MarketData.getKLineData'
-          '?symbol=$market$code&scale=$scale&ma=no&datalen=$limit';
-
-      final response = await _dio.get(url);
-      final data = response.data.toString();
-
-      if (data.isEmpty || data.contains('null')) return [];
-
-      final List<dynamic> klines = jsonDecode(data);
-      return klines.map((e) {
-        return {
-          'time': e['day'] ?? '',
-          'open': double.tryParse(e['open']?.toString() ?? '0') ?? 0,
-          'close': double.tryParse(e['close']?.toString() ?? '0') ?? 0,
-          'high': double.tryParse(e['high']?.toString() ?? '0') ?? 0,
-          'low': double.tryParse(e['low']?.toString() ?? '0') ?? 0,
-          'volume': int.tryParse(e['volume']?.toString() ?? '0') ?? 0,
-        };
-      }).toList();
-    } catch (e) {
-      print('[API] 新浪K线也失败: $code - $e');
-      return [];
-    }
-  }
-
-  // ==================== 热门股票 ====================
-
-  /// 获取热门股票（东方财富涨幅榜）
-  Future<List<Map<String, dynamic>>> getStockList({
-    int page = 1,
-    int pageSize = 20,
-  }) async {
-    try {
-      await _rateLimit();
-
-      // 东方财富涨幅榜
-      final url = 'https://push2.eastmoney.com/api/qt/clist/get'
-          '?fltt=2&invt=2&fields=f12,f14,f2,f3,f62,f184,f66,f69,f72,f75,f78,f81,f84,f87,f204,f205,f124'
-          '&fs=m:0+t:6,m:0+t:13,m:0+t:80,m:1+t:2,m:1+t:23'
-          '&fid=f3&po=1&pn=$page&pz=$pageSize';
-
-      final response = await _dio.get(
-        url,
-        options: Options(headers: {'User-Agent': _getRandomUA()}),
-      );
-
-      final data = jsonDecode(response.data.toString());
-      final diff = data['data']?['diff'] as List?;
-
-      if (diff == null || diff.isEmpty) {
-        return _getDefaultHotStocks();
-      }
-
-      return diff.map((e) {
-        final code = e['f12']?.toString() ?? '';
-        return {
-          'code': code,
-          'name': _stockNames[code] ?? e['f14']?.toString() ?? '',
-          'market': code.startsWith('6') ? 'sh' : 'sz',
-          'price': (e['f2'] as num?)?.toDouble() ?? 0,
-          'changePercent': (e['f3'] as num?)?.toDouble() ?? 0,
-        };
-      }).toList();
-    } catch (e) {
-      print('[API] 获取热门股票失败: $e');
-      return _getDefaultHotStocks();
-    }
-  }
-
+  /// 默认热门股票
   List<Map<String, dynamic>> _getDefaultHotStocks() {
     return [
-      {'code': '600519', 'name': '贵州茅台', 'market': 'sh', 'price': 1688.88, 'changePercent': 1.25},
-      {'code': '601318', 'name': '中国平安', 'market': 'sh', 'price': 45.88, 'changePercent': 0.85},
-      {'code': '300750', 'name': '宁德时代', 'market': 'sz', 'price': 198.50, 'changePercent': 2.15},
-      {'code': '002594', 'name': '比亚迪', 'market': 'sz', 'price': 258.60, 'changePercent': 1.95},
+      {'code': '600519', 'name': '贵州茅台', 'market': 'sh', 'price': 1315.0, 'changePercent': -0.7},
+      {'code': '601318', 'name': '中国平安', 'market': 'sh', 'price': 45.0, 'changePercent': 0.5},
+      {'code': '600036', 'name': '招商银行', 'market': 'sh', 'price': 32.0, 'changePercent': 0.3},
+      {'code': '000333', 'name': '美的集团', 'market': 'sz', 'price': 55.0, 'changePercent': 1.2},
+      {'code': '000651', 'name': '格力电器', 'market': 'sz', 'price': 38.0, 'changePercent': -0.5},
     ];
-  }
-
-  // ==================== 搜索 ====================
-
-  /// 搜索股票（东方财富）
-  Future<List<Map<String, dynamic>>> searchStocks(String keyword) async {
-    try {
-      await _rateLimit();
-
-      final url = 'https://searchapi.eastmoney.com/api/suggest/get'
-          '?input=${Uri.encodeComponent(keyword)}'
-          '&type=14&token=D43BF722C8E33BDC906FB84D85E326E8&count=20';
-
-      final response = await _dio.get(
-        url,
-        options: Options(headers: {'User-Agent': _getRandomUA()}),
-      );
-
-      final data = jsonDecode(response.data.toString());
-      final results = data['QuotationCodeTable']?['Data'] as List?;
-
-      if (results == null) return [];
-
-      return results.map((e) {
-        final code = e['Code']?.toString() ?? '';
-        final mktNum = e['MktNum']?.toString() ?? '0';
-        return {
-          'code': code,
-          'name': _stockNames[code] ?? e['Name']?.toString() ?? '',
-          'market': mktNum == '1' ? 'sh' : 'sz',
-        };
-      }).toList();
-    } catch (e) {
-      print('[API] 搜索失败: $keyword - $e');
-      return [];
-    }
-  }
-
-  // ==================== 财务数据 ====================
-
-  /// 获取财务数据（东方财富）
-  Future<Map<String, dynamic>> getFinanceReport(String code) async {
-    try {
-      await _rateLimit();
-
-      final market = code.startsWith('6') || code.startsWith('5') ? '1' : '0';
-
-      // 东方财富主要财务指标
-      final url = 'https://emdata.eastmoney.com/api/FinanceAnalysis/GetFinanceAnalysis'
-          '?code=$market.$code&type=1';
-
-      final response = await _dio.get(
-        url,
-        options: Options(headers: {'User-Agent': _getRandomUA()}),
-      );
-
-      final data = jsonDecode(response.data.toString());
-      // 解析财务数据...
-
-      return {
-        'code': code,
-        'name': _stockNames[code] ?? code,
-        'report_date': DateTime.now().toString().substring(0, 10),
-        'revenue': 0.0,
-        'profit': 0.0,
-        'eps': 0.0,
-        'roe': 0.0,
-      };
-    } catch (e) {
-      print('[API] 财务数据失败: $code - $e');
-      return {
-        'code': code,
-        'name': _stockNames[code] ?? code,
-        'report_date': DateTime.now().toString().substring(0, 10),
-        'revenue': 0.0,
-        'profit': 0.0,
-        'eps': 0.0,
-        'roe': 0.0,
-      };
-    }
-  }
-
-  // ==================== 新闻公告 ====================
-
-  /// 获取股票新闻
-  Future<List<Map<String, dynamic>>> getStockNews(String code, {int limit = 10}) async {
-    try {
-      await _rateLimit();
-
-      final url = 'https://np-listapi.eastmoney.com/comm/wap/getListInfo'
-          '?type=106&code=${code.startsWith('6') ? '1' : '0'}.$code'
-          '&pageSize=$limit&pageIndex=1';
-
-      final response = await _dio.get(
-        url,
-        options: Options(headers: {'User-Agent': _getRandomUA()}),
-      );
-
-      final data = jsonDecode(response.data.toString());
-      final list = data['data']?['list'] as List?;
-
-      if (list == null) return [];
-
-      return list.map((e) {
-        return {
-          'title': e['title']?.toString() ?? '',
-          'date': e['showtime']?.toString() ?? '',
-          'url': e['url']?.toString() ?? '',
-        };
-      }).toList();
-    } catch (e) {
-      print('[API] 新闻失败: $code - $e');
-      return [];
-    }
-  }
-
-  /// 获取股票公告
-  Future<List<Map<String, dynamic>>> getAnnouncements(String code, {int limit = 10}) async {
-    try {
-      await _rateLimit();
-
-      final url = 'https://np-anotice-stock.eastmoney.com/api/security/ann'
-          '?cb=&sr=1&pageIndex=1&pageSize=$limit'
-          '&code=${code.startsWith('6') ? '1' : '0'}.$code';
-
-      final response = await _dio.get(
-        url,
-        options: Options(headers: {'User-Agent': _getRandomUA()}),
-      );
-
-      final data = response.data.toString();
-      // JSONP 格式，需要提取 JSON
-      final jsonMatch = RegExp(r'\((.+)\)').firstMatch(data);
-      if (jsonMatch == null) return [];
-
-      final json = jsonDecode(jsonMatch.group(1)!);
-      final list = json['data']?['list'] as List?;
-
-      if (list == null) return [];
-
-      return list.map((e) {
-        return {
-          'title': e['title']?.toString() ?? '',
-          'date': e['notice_date']?.toString() ?? '',
-          'type': e['ann_type']?.toString() ?? '',
-        };
-      }).toList();
-    } catch (e) {
-      print('[API] 公告失败: $code - $e');
-      return [];
-    }
   }
 }
