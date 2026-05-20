@@ -32,32 +32,16 @@ class StockProvider extends ChangeNotifier {
     notifyListeners();
 
     try {
-      print('[StockProvider] 开始获取股票详情: $code');
+      print('[StockProvider] 获取详情: $code');
       final data = await _apiService.getStockQuote(code);
-      print('[StockProvider] 获取到数据: $data');
+      print('[StockProvider] 返回: name=${data['name']} price=${data['currentPrice']} cp=${data['changePercent']}');
 
-      // 检查数据有效性 - 只要有名称或价格就认为有效
-      final name = data['name']?.toString() ?? '';
-      final currentPrice = (data['currentPrice'] as num?)?.toDouble() ?? 0.0;
-      
-      print('[StockProvider] 数据检查: name=$name, price=$currentPrice, code=$code');
-      
-      // 只要有名称就显示（不管价格是否为0）
-      if (name.isNotEmpty && name != '数据加载中...') {
-        _currentStock = Stock.fromQuote(data);
-        print('[StockProvider] 股票详情加载成功: ${_currentStock?.name} ${_currentStock?.currentPrice}');
-      } else {
-        // 即使名称为空，也尝试显示（使用代码作为名称）
-        _currentStock = Stock.fromQuote({
-          ...data,
-          'name': name.isNotEmpty ? name : code,
-        });
-        print('[StockProvider] 使用备用名称: ${_currentStock?.name}');
-      }
-    } catch (e, stackTrace) {
+      // 始终用 Stock.fromQuote 构建，不做过严验证
+      _currentStock = Stock.fromQuote(data);
+      print('[StockProvider] 成功: ${_currentStock?.name} ${_currentStock?.currentPrice}');
+    } catch (e) {
       _error = '加载失败: $e';
-      print('[StockProvider] 获取详情失败: $e');
-      print('[StockProvider] 堆栈: $stackTrace');
+      print('[StockProvider] 详情失败: $e');
     } finally {
       _isLoading = false;
       notifyListeners();
@@ -74,13 +58,14 @@ class StockProvider extends ChangeNotifier {
     notifyListeners();
 
     try {
+      print('[StockProvider] K线: code=$code period=$period');
       final data = await _apiService.getKLineData(
         code: code,
         period: period,
         count: limit,
       );
+      print('[StockProvider] K线返回 ${data.length} 条');
 
-      // 先创建基础K线数据
       var klines = data.map((e) {
         return KLineData(
           time: DateTime.tryParse(e['time'] ?? '') ?? DateTime.now(),
@@ -92,13 +77,13 @@ class StockProvider extends ChangeNotifier {
         );
       }).toList();
 
-      // 计算均线
       klines = _calculateMA(klines);
 
       _klineData = klines;
       _currentPeriod = period;
+      print('[StockProvider] K线处理完成，${klines.length} 条');
     } catch (e) {
-      print('[StockProvider] 获取K线失败: $e');
+      print('[StockProvider] K线失败: $e');
     } finally {
       _isLoading = false;
       notifyListeners();
@@ -115,7 +100,6 @@ class StockProvider extends ChangeNotifier {
 
       double? ma5, ma10, ma20;
 
-      // MA5
       if (index >= 4) {
         final sum = data.sublist(index - 4, index + 1)
             .map((k) => k.close)
@@ -123,7 +107,6 @@ class StockProvider extends ChangeNotifier {
         ma5 = sum / 5;
       }
 
-      // MA10
       if (index >= 9) {
         final sum = data.sublist(index - 9, index + 1)
             .map((k) => k.close)
@@ -131,7 +114,6 @@ class StockProvider extends ChangeNotifier {
         ma10 = sum / 10;
       }
 
-      // MA20
       if (index >= 19) {
         final sum = data.sublist(index - 19, index + 1)
             .map((k) => k.close)
@@ -153,28 +135,27 @@ class StockProvider extends ChangeNotifier {
     }).toList();
   }
 
-  /// 切换K线周期
+  /// 切换K线周期 - 传纯代码
   Future<void> switchPeriod(String period) async {
     if (_currentStock == null) return;
-    
+
     _currentPeriod = period;
     notifyListeners();
 
     await fetchKLineData(
-      code: '${_currentStock!.market}${_currentStock!.code}',
+      code: _currentStock!.code, // 传纯代码，API内部处理前缀
       period: period,
     );
   }
 
-  /// 分析K线
+  /// 分析K线 - 传纯代码
   Future<void> analyzeKLine(String code, String name) async {
     _isLoading = true;
     notifyListeners();
 
     try {
-      // 获取日K数据
       final data = await _apiService.getKLineData(
-        code: code,
+        code: code, // API内部处理前缀
         period: 'day',
         count: 60,
       );
@@ -184,7 +165,6 @@ class StockProvider extends ChangeNotifier {
         return;
       }
 
-      // 转换为 KLineData
       final klines = data.map((e) {
         return KLineData(
           time: DateTime.tryParse(e['time'] ?? '') ?? DateTime.now(),
@@ -196,7 +176,6 @@ class StockProvider extends ChangeNotifier {
         );
       }).toList();
 
-      // 生成简单的分析结果
       _klineAnalysis = _generateAnalysis(klines, name);
     } catch (e) {
       print('[StockProvider] 分析失败: $e');
@@ -224,19 +203,17 @@ class StockProvider extends ChangeNotifier {
 
     final lastPrice = klines.last.close;
     final prices = klines.map((k) => k.close).toList();
-    
-    // 计算简单均线
+
     double calcMA(List<double> prices, int period) {
       if (prices.length < period) return 0;
       final slice = prices.sublist(prices.length - period);
       return slice.reduce((a, b) => a + b) / period;
     }
-    
+
     final ma5 = calcMA(prices, 5);
     final ma10 = calcMA(prices, 10);
     final ma20 = calcMA(prices, 20);
-    
-    // 判断趋势
+
     String trend = '震荡';
     if (ma5 > ma20 && lastPrice > ma5) {
       trend = '上涨趋势';
@@ -244,13 +221,11 @@ class StockProvider extends ChangeNotifier {
       trend = '下跌趋势';
     }
 
-    // 计算支撑阻力
     final lows = klines.map((k) => k.low).toList();
     final highs = klines.map((k) => k.high).toList();
     final support = lows.reduce((a, b) => a < b ? a : b);
     final resistance = highs.reduce((a, b) => a > b ? a : b);
 
-    // 计算涨跌
     final firstPrice = prices.first;
     final change = lastPrice - firstPrice;
     final changePercent = firstPrice != 0 ? (change / firstPrice) * 100 : 0;
@@ -270,16 +245,13 @@ class StockProvider extends ChangeNotifier {
 
   List<String> _detectPatterns(List<KLineData> klines) {
     final patterns = <String>[];
-    
     if (klines.length < 5) return patterns;
 
-    // 检查是否创新高
     final recentHighs = klines.sublist(klines.length - 5).map((k) => k.high);
     if (klines.last.high >= recentHighs.reduce((a, b) => a > b ? a : b)) {
       patterns.add('近期创新高');
     }
 
-    // 检查是否连续上涨
     int upDays = 0;
     for (int i = klines.length - 1; i > 0 && klines[i].close > klines[i-1].close; i--) {
       upDays++;
@@ -293,8 +265,6 @@ class StockProvider extends ChangeNotifier {
 
   List<String> _generateWarnings(List<KLineData> klines) {
     final warnings = <String>[];
-    
-    // 检查成交量是否放大
     if (klines.length >= 20) {
       final avgVolume = klines.sublist(0, klines.length - 1)
           .map((k) => k.volume)
@@ -304,7 +274,6 @@ class StockProvider extends ChangeNotifier {
         warnings.add('成交量异常放大，请注意风险');
       }
     }
-
     return warnings;
   }
 
@@ -317,11 +286,11 @@ class StockProvider extends ChangeNotifier {
     return '目前处于震荡区间，建议高抛低吸，控制仓位';
   }
 
-  /// 刷新数据
+  /// 刷新数据 - 传纯代码
   Future<void> refresh() async {
     if (_currentStock == null) return;
-    await fetchStockDetail('${_currentStock!.market}${_currentStock!.code}');
-    await fetchKLineData(code: '${_currentStock!.market}${_currentStock!.code}', period: _currentPeriod);
+    await fetchStockDetail(_currentStock!.code);
+    await fetchKLineData(code: _currentStock!.code, period: _currentPeriod);
   }
 
   /// 清除数据

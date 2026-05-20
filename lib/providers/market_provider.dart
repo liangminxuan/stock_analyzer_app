@@ -30,14 +30,15 @@ class MarketProvider extends ChangeNotifier {
 
       _indices = data.map((e) {
         final point = (e['currentPoint'] ?? 0).toDouble();
-        print('[MarketProvider] ${e['name']}: $point');
+        final cp = (e['changePercent'] ?? 0).toDouble();
+        print('[MarketProvider] ${e['name']}: $point 涨跌=$cp%');
 
         return MarketIndex(
           code: e['code'] ?? '',
           name: e['name'] ?? '未知',
           currentPoint: point,
           change: (e['change'] ?? 0).toDouble(),
-          changePercent: (e['changePercent'] ?? 0).toDouble(),
+          changePercent: cp,
           volume: 0,
         );
       }).toList();
@@ -50,7 +51,7 @@ class MarketProvider extends ChangeNotifier {
     }
   }
 
-  /// 获取热门股票
+  /// 获取热门股票 - API现在统一返回 currentPrice
   Future<void> fetchHotStocks() async {
     try {
       final data = await _apiService.getStockList(page: 1, pageSize: 20);
@@ -60,20 +61,21 @@ class MarketProvider extends ChangeNotifier {
         final code = e['code']?.toString() ?? '';
         final name = e['name']?.toString() ?? '未知';
         final market = e['market']?.toString() ?? (code.startsWith('6') ? 'sh' : 'sz');
-        // API返回的是price，但Stock.fromQuote期望currentPrice
-        final price = (e['price'] as num?)?.toDouble() ?? 0.0;
+        final price = (e['currentPrice'] as num?)?.toDouble() ?? 0.0;
         final changePercent = (e['changePercent'] as num?)?.toDouble() ?? 0.0;
-        
-        print('[MarketProvider] 股票: $code $name 价格: $price 涨跌: $changePercent%');
-        
-        // 使用完整字段构建Stock
+        final change = (e['change'] as num?)?.toDouble() ?? 0.0;
+        final prevClose = (e['previousClose'] as num?)?.toDouble() ?? 0.0;
+
+        print('[MarketProvider] $code $name 价格=$price 涨跌=$changePercent%');
+
         return Stock(
           code: code,
           name: name,
           market: market,
           currentPrice: price,
+          change: change,
           changePercent: changePercent,
-          previousClose: price != 0 && changePercent != 0 ? price / (1 + changePercent/100) : 0,
+          previousClose: prevClose,
           volume: (e['volume'] as num?)?.toInt() ?? 0,
           highPrice: (e['high'] as num?)?.toDouble() ?? 0.0,
           lowPrice: (e['low'] as num?)?.toDouble() ?? 0.0,

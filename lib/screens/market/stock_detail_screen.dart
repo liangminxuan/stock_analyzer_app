@@ -311,7 +311,12 @@ class _StockDetailScreenState extends State<StockDetailScreen> {
       ),
     );
 
-    await provider.analyzeKLine(widget.stockCode, widget.stockName);
+    // 传纯代码给 analyzeKLine
+    String pureCode = widget.stockCode;
+    if (pureCode.startsWith('sh') || pureCode.startsWith('sz')) {
+      pureCode = pureCode.substring(2);
+    }
+    await provider.analyzeKLine(pureCode, widget.stockName);
 
     if (context.mounted) {
       Navigator.pop(context);
