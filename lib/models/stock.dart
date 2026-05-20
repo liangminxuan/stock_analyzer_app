@@ -175,16 +175,20 @@ class Stock {
     return '平盘';
   }
 
-  /// 格式化涨跌幅显示
+  /// 格式化涨跌幅显示（changePercent 可能已带符号）
   String get changePercentText {
-    final sign = isUp ? '+' : '';
-    return '$sign${changePercent.toStringAsFixed(2)}%';
+    final value = changePercent.abs();
+    if (changePercent > 0) return '+${value.toStringAsFixed(2)}%';
+    if (changePercent < 0) return '-${value.toStringAsFixed(2)}%';
+    return '0.00%';
   }
 
-  /// 格式化涨跌额显示
+  /// 格式化涨跌额显示（change 可能已带符号）
   String get changeText {
-    final sign = isUp ? '+' : '';
-    return '$sign${change.toStringAsFixed(2)}';
+    final value = change.abs();
+    if (change > 0) return '+${value.toStringAsFixed(2)}';
+    if (change < 0) return '-${value.toStringAsFixed(2)}';
+    return '0.00';
   }
 
   /// 格式化价格显示
@@ -459,8 +463,10 @@ class StockItem {
   bool get isDown => changePercent < 0;
 
   String get changePercentText {
-    final sign = isUp ? '+' : '';
-    return '$sign${changePercent.toStringAsFixed(2)}%';
+    final value = changePercent.abs();
+    if (changePercent > 0) return '+${value.toStringAsFixed(2)}%';
+    if (changePercent < 0) return '-${value.toStringAsFixed(2)}%';
+    return '0.00%';
   }
 
   @override
@@ -548,8 +554,10 @@ class MarketIndex {
   bool get isDown => change < 0;
 
   String get changePercentText {
-    final sign = isUp ? '+' : '';
-    return '$sign${changePercent.toStringAsFixed(2)}%';
+    final value = changePercent.abs();
+    if (changePercent > 0) return '+${value.toStringAsFixed(2)}%';
+    if (changePercent < 0) return '-${value.toStringAsFixed(2)}%';
+    return '0.00%';
   }
 
   String get pointText => currentPoint.toStringAsFixed(2);
