@@ -36,16 +36,23 @@ class StockProvider extends ChangeNotifier {
       final data = await _apiService.getStockQuote(code);
       print('[StockProvider] 获取到数据: $data');
 
-      // 检查数据有效性 - 只要有名称就认为有效
+      // 检查数据有效性 - 只要有名称或价格就认为有效
       final name = data['name']?.toString() ?? '';
       final currentPrice = (data['currentPrice'] as num?)?.toDouble() ?? 0.0;
       
-      if (name.isNotEmpty && name != '数据加载中...' && name != code) {
+      print('[StockProvider] 数据检查: name=$name, price=$currentPrice, code=$code');
+      
+      // 只要有名称就显示（不管价格是否为0）
+      if (name.isNotEmpty && name != '数据加载中...') {
         _currentStock = Stock.fromQuote(data);
         print('[StockProvider] 股票详情加载成功: ${_currentStock?.name} ${_currentStock?.currentPrice}');
       } else {
-        _error = '无法获取股票数据 (name=$name, price=$currentPrice)';
-        print('[StockProvider] 数据无效: name=$name, price=$currentPrice, code=$code');
+        // 即使名称为空，也尝试显示（使用代码作为名称）
+        _currentStock = Stock.fromQuote({
+          ...data,
+          'name': name.isNotEmpty ? name : code,
+        });
+        print('[StockProvider] 使用备用名称: ${_currentStock?.name}');
       }
     } catch (e, stackTrace) {
       _error = '加载失败: $e';
