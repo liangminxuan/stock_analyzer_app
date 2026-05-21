@@ -816,7 +816,8 @@ class _StockAnnouncementSheetState extends State<_StockAnnouncementSheet> {
                           ),
                         )),
                       ],
-                    ),
+                    ],
+                  ),
                   ),
                 ),
               ],
@@ -826,7 +827,6 @@ class _StockAnnouncementSheetState extends State<_StockAnnouncementSheet> {
       },
     );
   }
-}
 
 /// 公告详情底部弹窗 - 显示原文深度解读
 class _AnnouncementDetailSheet extends StatefulWidget {
