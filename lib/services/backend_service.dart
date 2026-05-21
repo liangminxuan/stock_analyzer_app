@@ -9,10 +9,8 @@ class BackendService {
   late Dio _dio;
   bool _initialized = false;
 
-  /// 后端服务地址（需要部署后修改）
-  /// 本地开发: http://localhost:5000
-  /// 部署后: https://your-backend-domain.com
-  static const String baseUrl = 'http://localhost:5000';
+  /// 后端服务地址（已部署到 Render）
+  static const String baseUrl = 'https://stock-analyzer-app-1-j7jd.onrender.com';
 
   Dio get dio {
     if (!_initialized) init();
