@@ -97,25 +97,30 @@ class StockApiService {
   // ==================== 核心接口 ====================
 
   /// 解析腾讯单条数据
+  /// 字段索引已通过实际接口验证（2026-05-21）
   Map<String, dynamic>? _parseTencentLine(String content, String code) {
     try {
       final fields = content.split('~');
       if (fields.length < 45) return null;
 
-      final name = _stockNames[code] ?? fields[1];
+      // 优先使用预定义名称（避免GBK解码问题）
+      final pure = _pureCode(code);
+      final name = _stockNames[pure] ?? fields[1];
       final currentPrice = double.tryParse(fields[3]) ?? 0;
       final prevClose = double.tryParse(fields[4]) ?? 0;
       final openPrice = double.tryParse(fields[5]) ?? 0;
       final volume = int.tryParse(fields[6]) ?? 0;
-      // fields[31]=涨跌幅(带符号), fields[30]=涨跌额(带符号)
-      final changePercent = double.tryParse(fields[31]) ?? 0;
-      final change = double.tryParse(fields[30]) ?? 0;
-      // fields[32]=最高, fields[33]=最低
-      final high = double.tryParse(fields[32]) ?? 0;
-      final low = double.tryParse(fields[33]) ?? 0;
-      // fields[37]=总市值(元), fields[43]=市盈率
-      final marketCap = double.tryParse(fields[37]) ?? 0;
-      final pe = double.tryParse(fields[43]) ?? 0;
+      // 已验证的正确索引:
+      // fields[30]=时间, fields[31]=涨跌额, fields[32]=涨跌幅
+      // fields[33]=最高, fields[34]=最低
+      final change = double.tryParse(fields[31]) ?? 0;
+      final changePercent = double.tryParse(fields[32]) ?? 0;
+      final high = double.tryParse(fields[33]) ?? 0;
+      final low = double.tryParse(fields[34]) ?? 0;
+      // fields[37]=成交额(万), fields[39]=市盈率, fields[44]=总市值(亿)
+      final turnover = double.tryParse(fields[37]) ?? 0;
+      final pe = double.tryParse(fields[39]) ?? 0;
+      final marketCap = double.tryParse(fields[44]) ?? 0;
 
       // 五档买卖盘: fields[9~18]=买盘(价格,量), fields[19~28]=卖盘(价格,量)
       final bidPrices = <double>[];
@@ -129,7 +134,6 @@ class StockApiService {
         askVolumes.add(int.tryParse(fields[20 + i * 2]) ?? 0);
       }
 
-      final pure = _pureCode(code);
       return {
         'code': pure,
         'name': name,
@@ -140,7 +144,7 @@ class StockApiService {
         'high': high,
         'low': low,
         'volume': volume,
-        'turnover': 0.0,
+        'turnover': turnover,
         'change': change,
         'changePercent': changePercent,
         'marketCap': marketCap,
