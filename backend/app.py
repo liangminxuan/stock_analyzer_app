@@ -740,8 +740,9 @@ def get_announcement_detail():
         })
 
     except Exception as e:
-        traceback.print_exc()
-        return jsonify({'success': False, 'error': str(e)}), 500
+        error_detail = traceback.format_exc()
+        print(f"[get_announcement_detail] 错误: {e}\n{error_detail}")
+        return jsonify({'success': False, 'error': str(e), 'detail': error_detail}), 500
 
 
 def generate_announcement_interpretation(title, content, stock_name):
