@@ -549,31 +549,55 @@ class _NewsScreenState extends State<NewsScreen> {
     );
   }
 
-  /// 根据公告类型和标题生成简单 AI 解读
+  /// 根据公告类型和标题生成简单 AI 解读 - 使用大白话
   String _generateAiInterpretation(String type, String title, String stockName) {
     final lowerTitle = title.toLowerCase();
     final lowerType = type.toLowerCase();
 
     if (lowerTitle.contains('分红') || lowerTitle.contains('利润分配') || lowerTitle.contains('派息')) {
-      return '该公告属于分红派息类，表明$stockName盈利状况良好，有现金回馈股东的能力。建议关注分红比例和除权除息日期。';
+      return '🎉 好消息！$stockName要给大家发红包了！\n\n'
+          '这说明公司赚钱了，愿意把利润分给股东。就像你投资了一家生意好的店，老板给你分红一样。\n\n'
+          '💡 投资提示：分红多的公司通常比较稳健，适合长期持有。记得关注什么时候能拿到这笔钱（除权除息日）。';
     } else if (lowerTitle.contains('增持') || lowerTitle.contains('回购')) {
-      return '该公告属于股东增持/回购类，显示大股东或管理层对公司未来发展有信心，属于偏正面信号。建议关注增持金额和后续进展。';
+      return '👍 内部人士在"抄底"！\n\n'
+          '公司的大股东或高管正在买入自家股票，这就像饭店老板自己掏钱买自家店的股份。说明他们对公司未来很有信心！\n\n'
+          '💡 投资提示：这是积极信号，但要看买入金额大不大。如果只是象征性买一点，意义就不大。';
     } else if (lowerTitle.contains('减持')) {
-      return '该公告属于股东减持类，需关注减持比例和减持方身份。若为高管减持，可能反映短期估值偏高预期；若为财务投资方正常退出，影响相对有限。';
+      return '⚠️ 有人在"套现"了\n\n'
+          '公司股东在卖股票换现金。如果是高管减持，可能觉得现在股价偏高；如果是投资机构减持，可能只是正常退出。\n\n'
+          '💡 投资提示：不要慌！关键看减持比例。如果卖得不多（比如不到1%），影响有限。但如果大股东大量抛售，就要小心了。';
     } else if (lowerTitle.contains('业绩') || lowerTitle.contains('预告') || lowerTitle.contains('快报')) {
-      return '该公告属于业绩披露类，是评估$stockName经营状况的重要依据。建议结合行业趋势和同业对比综合分析。';
+      return '📊 $stockName的"成绩单"来了\n\n'
+          '公司发布了业绩预报，告诉你这段时间赚了多少钱、生意好不好。这是判断公司好坏的重要依据。\n\n'
+          '💡 投资提示：不仅要看赚了多少，还要看和去年比是增长还是下滑。和行业其他公司比怎么样？';
     } else if (lowerTitle.contains('合同') || lowerTitle.contains('中标') || lowerTitle.contains('签约')) {
-      return '该公告属于重大合同/中标类，显示$stockName获得新业务订单，对未来营收有积极影响。建议关注合同金额和执行周期。';
+      return '🎊 $stockName拿下大单子！\n\n'
+          '公司签了大合同或中标了项目，就像你开的店接了一个大订单，未来收入有保障了。\n\n'
+          '💡 投资提示：合同金额越大越好，但也要看能不能顺利执行。有些合同看着很大，实际回款很慢。';
     } else if (lowerTitle.contains('担保') || lowerTitle.contains('质押')) {
-      return '该公告涉及担保/质押事项，需关注担保金额占净资产比例及被担保方资质，评估潜在风险敞口。';
+      return '⚡ 注意！公司在"借钱"或"抵押"\n\n'
+          '公司可能用资产做抵押借钱，或者为别人做担保。这就像你拿房子抵押贷款，或者帮朋友担保贷款。\n\n'
+          '💡 投资提示：适度借贷是正常的，但如果担保金额太大，一旦对方还不上钱，公司就要替还，风险很大！';
     } else if (lowerTitle.contains('处罚') || lowerTitle.contains('违规') || lowerTitle.contains('监管')) {
-      return '该公告涉及监管处罚或违规事项，属于负面信号。建议关注处罚金额、影响范围及公司整改措施。';
+      return '🚨 红灯警告！公司被"点名批评"了\n\n'
+          '公司因为某些违规行为被监管部门处罚了，比如财务造假、信息披露不及时等。这是负面消息！\n\n'
+          '💡 投资提示：要看处罚严重程度。如果是小违规，影响不大；如果是财务造假这种大问题，建议远离！';
     } else if (lowerTitle.contains('股东大会') || lowerTitle.contains('临时')) {
-      return '该公告为股东大会通知，建议关注审议议案内容，特别是涉及重大投资、融资、人事变动等事项。';
+      return '🏛️ 公司要开"股东大会"了\n\n'
+          '就像公司的"全体会议"，要讨论一些重要事项，比如选新董事、决定是否收购其他公司、要不要增发股票等。\n\n'
+          '💡 投资提示：关注会议要表决什么议案。特别是涉及融资、并购、高管变动的事项，可能影响股价。';
     } else if (lowerTitle.contains('年报') || lowerTitle.contains('半年报') || lowerTitle.contains('季报') || lowerTitle.contains('报告')) {
-      return '该公告为定期报告类，包含$stockName完整的财务数据和经营情况。建议重点关注营收增速、净利润变化、现金流状况等核心指标。';
+      return '📈 $stockName的"体检报告"出炉\n\n'
+          '这是公司最全面的财务报告，告诉你：赚了多少钱？花了多少钱？欠了多少钱？手里还有多少钱？\n\n'
+          '💡 投资提示：重点关注三个数字：\n'
+          '1️⃣ 营业收入 - 生意做得多大\n'
+          '2️⃣ 净利润 - 实际赚了多少钱\n'
+          '3️⃣ 现金流 - 手里有没有真金白银';
     } else {
-      return '该公告属于$type类别，建议仔细阅读公告原文，关注对$stockName经营和股价可能产生的影响。';
+      return '📋 这是一则$type公告\n\n'
+          '公告标题：$title\n\n'
+          '💡 投资提示：建议仔细阅读公告全文，了解具体内容和可能对$stockName股价的影响。'
+          '如果看不懂专业术语，可以搜索相关解释或咨询专业人士。';
     }
   }
 }

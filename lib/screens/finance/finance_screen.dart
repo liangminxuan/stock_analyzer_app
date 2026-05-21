@@ -585,7 +585,7 @@ class _StockFinanceSheetState extends State<_StockFinanceSheet> {
     );
   }
 
-  /// 根据财报数据生成简单 AI 解读
+  /// 根据财报数据生成大白话 AI 解读
   String _generateFinanceInterpretation(Map<String, dynamic> item, String stockName) {
     final revenue = item['营业总收入']?.toString() ?? '';
     final netProfit = item['净利润']?.toString() ?? '';
@@ -595,50 +595,74 @@ class _StockFinanceSheetState extends State<_StockFinanceSheet> {
     final reportDate = item['report_date']?.toString() ?? '';
 
     final buffer = StringBuffer();
-    buffer.writeln('$stockName $reportDate 财报分析：');
+    buffer.writeln('📊 $stockName $reportDate 财报解读\n');
 
+    // 营收解读
     if (revenue.isNotEmpty) {
-      buffer.writeln('• 营业总收入: $revenue');
-    }
-    if (netProfit.isNotEmpty) {
-      buffer.writeln('• 净利润: $netProfit');
-    }
-    if (eps.isNotEmpty) {
-      buffer.writeln('• 基本每股收益: $eps');
-    }
-    if (roe.isNotEmpty) {
-      buffer.writeln('• 净资产收益率(ROE): $roe');
-    }
-    if (grossMargin.isNotEmpty) {
-      buffer.writeln('• 销售毛利率: $grossMargin');
+      buffer.writeln('💰 生意做得多大？');
+      buffer.writeln('营业收入：$revenue');
+      buffer.writeln('→ 这是公司卖产品/服务收到的总钱数\n');
     }
 
-    // 简单分析
+    // 净利润解读
+    if (netProfit.isNotEmpty) {
+      buffer.writeln('💵 实际赚了多少钱？');
+      buffer.writeln('净利润：$netProfit');
+      buffer.writeln('→ 扣掉所有成本、税费后真正赚到手的钱\n');
+    }
+
+    // EPS解读
+    if (eps.isNotEmpty) {
+      buffer.writeln('📈 每股能赚多少？');
+      buffer.writeln('每股收益：$eps');
+      buffer.writeln('→ 每持有一股股票，公司帮你赚了这么多钱\n');
+    }
+
+    // ROE解读 - 大白话
     if (roe.isNotEmpty) {
       final roeValue = double.tryParse(roe.replaceAll(RegExp(r'[^\d.\-]'), ''));
+      buffer.writeln('🏆 赚钱能力强不强？');
+      buffer.writeln('ROE（净资产收益率）：$roe');
       if (roeValue != null) {
-        if (roeValue > 15) {
-          buffer.writeln('\nROE超过15%，显示公司盈利能力较强，属于优质企业特征。');
+        if (roeValue > 20) {
+          buffer.writeln('→ 🌟 超强！公司用股东的钱很能赚钱，巴菲特最喜欢的类型！');
+        } else if (roeValue > 15) {
+          buffer.writeln('→ 👍 很不错！公司赚钱能力优秀，值得长期关注。');
         } else if (roeValue > 10) {
-          buffer.writeln('\nROE处于10%-15%区间，盈利能力中等偏上。');
+          buffer.writeln('→ 😊 还可以！赚钱能力中等偏上，算是个好学生。');
+        } else if (roeValue > 5) {
+          buffer.writeln('→ 🤔 一般般。赚钱能力普通，可能行业竞争激烈。');
         } else {
-          buffer.writeln('\nROE低于10%，需关注公司盈利能力和资产使用效率。');
+          buffer.writeln('→ ⚠️ 较差。公司赚钱能力弱，投资要谨慎！');
         }
       }
+      buffer.writeln('');
     }
 
+    // 毛利率解读 - 大白话
     if (grossMargin.isNotEmpty) {
       final marginValue = double.tryParse(grossMargin.replaceAll(RegExp(r'[^\d.\-]'), ''));
+      buffer.writeln('🎯 产品竞争力如何？');
+      buffer.writeln('毛利率：$grossMargin');
       if (marginValue != null) {
-        if (marginValue > 50) {
-          buffer.writeln('毛利率较高，说明公司产品具有较强竞争力和定价能力。');
-        } else if (marginValue > 30) {
-          buffer.writeln('毛利率处于合理水平，行业竞争力尚可。');
+        if (marginValue > 60) {
+          buffer.writeln('→ 💎 超高！产品有很强的定价权，可能是独家技术或品牌。');
+        } else if (marginValue > 40) {
+          buffer.writeln('→ ✅ 很好！产品利润空间大，竞争力强。');
+        } else if (marginValue > 20) {
+          buffer.writeln('→ 👌 正常。大多数行业都在这个水平。');
+        } else {
+          buffer.writeln('→ 📉 偏低。行业可能很卷，或者公司没有定价权。');
         }
       }
+      buffer.writeln('');
     }
 
-    buffer.writeln('\n建议结合历史趋势和同行业对比进行综合判断。');
+    // 总结建议
+    buffer.writeln('💡 投资小建议：');
+    buffer.writeln('1. 不仅要看这一期财报，还要看连续几期的趋势');
+    buffer.writeln('2. 和同行业的其他公司对比，才知道好坏');
+    buffer.writeln('3. 好财报不等于好股价，还要看市场情绪和估值');
 
     return buffer.toString();
   }

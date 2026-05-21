@@ -1,5 +1,5 @@
 """
-股票数据后端服务 - 使用 AKShare 获取公告、新闻、财报数据
+股票数据后端服务 - 使用 AKShare 获取公告、新闻、财报、选股数据
 部署: python app.py
 端口: 5000
 """
@@ -10,6 +10,7 @@ import akshare as ak
 import json
 from datetime import datetime, timedelta
 import traceback
+import pandas as pd
 
 app = Flask(__name__)
 CORS(app)
@@ -269,6 +270,351 @@ def get_stock_analysis():
             'news': news,
             'financial': financial,
         })
+
+    except Exception as e:
+        traceback.print_exc()
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+# ==================== 智能选股 API ====================
+
+@app.route('/api/stock/screen', methods=['GET'])
+def stock_screen():
+    """
+    股票筛选器 - 根据条件筛选股票
+    参数:
+      - pe_min, pe_max: 市盈率范围
+      - pb_min, pb_max: 市净率范围
+      - roe_min: ROE最低值
+      - market_cap_min, market_cap_max: 市值范围(亿)
+      - turnover_min: 换手率最低值
+      - industry: 行业名称
+      - page: 页码，默认1
+      - size: 每页数量，默认20
+    """
+    try:
+        # 获取筛选参数
+        pe_min = request.args.get('pe_min', type=float)
+        pe_max = request.args.get('pe_max', type=float)
+        pb_min = request.args.get('pb_min', type=float)
+        pb_max = request.args.get('pb_max', type=float)
+        roe_min = request.args.get('roe_min', type=float)
+        market_cap_min = request.args.get('market_cap_min', type=float)
+        market_cap_max = request.args.get('market_cap_max', type=float)
+        turnover_min = request.args.get('turnover_min', type=float)
+        industry = request.args.get('industry', '')
+        page = int(request.args.get('page', 1))
+        size = int(request.args.get('size', 20))
+
+        # 缓存key
+        cache_key = f'screen_{pe_min}_{pe_max}_{pb_min}_{pb_max}_{roe_min}_{market_cap_min}_{market_cap_max}_{turnover_min}_{industry}'
+        cached = get_cached(cache_key, 600)
+        if cached:
+            return jsonify(cached)
+
+        # 获取A股实时行情数据
+        try:
+            df = ak.stock_zh_a_spot_em()
+        except:
+            # 备用接口
+            df = ak.stock_zh_a_spot()
+
+        # 重命名列以便统一处理
+        column_mapping = {
+            '代码': 'code',
+            '名称': 'name',
+            '最新价': 'price',
+            '涨跌幅': 'change_percent',
+            '市盈率-动态': 'pe',
+            '市净率': 'pb',
+            '总市值': 'market_cap',
+            '换手率': 'turnover',
+            '所属行业': 'industry',
+            'ROE': 'roe',
+        }
+        df = df.rename(columns=column_mapping)
+
+        # 数据清洗和转换
+        if 'pe' in df.columns:
+            df['pe'] = pd.to_numeric(df['pe'], errors='coerce')
+        if 'pb' in df.columns:
+            df['pb'] = pd.to_numeric(df['pb'], errors='coerce')
+        if 'market_cap' in df.columns:
+            df['market_cap'] = pd.to_numeric(df['market_cap'], errors='coerce') / 100000000  # 转为亿
+        if 'turnover' in df.columns:
+            df['turnover'] = pd.to_numeric(df['turnover'], errors='coerce')
+        if 'roe' in df.columns:
+            df['roe'] = pd.to_numeric(df['roe'], errors='coerce')
+
+        # 应用筛选条件
+        if pe_min is not None:
+            df = df[df['pe'] >= pe_min]
+        if pe_max is not None:
+            df = df[df['pe'] <= pe_max]
+        if pb_min is not None:
+            df = df[df['pb'] >= pb_min]
+        if pb_max is not None:
+            df = df[df['pb'] <= pb_max]
+        if roe_min is not None and 'roe' in df.columns:
+            df = df[df['roe'] >= roe_min]
+        if market_cap_min is not None:
+            df = df[df['market_cap'] >= market_cap_min]
+        if market_cap_max is not None:
+            df = df[df['market_cap'] <= market_cap_max]
+        if turnover_min is not None:
+            df = df[df['turnover'] >= turnover_min]
+        if industry and 'industry' in df.columns:
+            df = df[df['industry'].str.contains(industry, na=False)]
+
+        # 排除异常值
+        df = df[df['pe'] > 0]  # 排除负PE
+        df = df[df['pb'] > 0]  # 排除负PB
+
+        # 排序（按涨跌幅降序）
+        if 'change_percent' in df.columns:
+            df = df.sort_values('change_percent', ascending=False)
+
+        # 分页
+        total = len(df)
+        start = (page - 1) * size
+        end = start + size
+        df_page = df.iloc[start:end]
+
+        # 构建返回数据
+        items = []
+        for _, row in df_page.iterrows():
+            item = {
+                'code': str(row.get('code', '')),
+                'name': str(row.get('name', '')),
+                'price': float(row.get('price', 0)) if pd.notna(row.get('price')) else 0,
+                'change_percent': float(row.get('change_percent', 0)) if pd.notna(row.get('change_percent')) else 0,
+                'pe': float(row.get('pe', 0)) if pd.notna(row.get('pe')) else None,
+                'pb': float(row.get('pb', 0)) if pd.notna(row.get('pb')) else None,
+                'market_cap': float(row.get('market_cap', 0)) if pd.notna(row.get('market_cap')) else None,
+                'turnover': float(row.get('turnover', 0)) if pd.notna(row.get('turnover')) else None,
+            }
+            if 'industry' in df.columns:
+                item['industry'] = str(row.get('industry', ''))
+            if 'roe' in df.columns:
+                item['roe'] = float(row.get('roe', 0)) if pd.notna(row.get('roe')) else None
+            items.append(item)
+
+        result = {
+            'success': True,
+            'total': total,
+            'page': page,
+            'size': size,
+            'filters': {
+                'pe_range': [pe_min, pe_max],
+                'pb_range': [pb_min, pb_max],
+                'roe_min': roe_min,
+                'market_cap_range': [market_cap_min, market_cap_max],
+                'turnover_min': turnover_min,
+                'industry': industry,
+            },
+            'data': items,
+        }
+
+        set_cached(cache_key, result, 600)
+        return jsonify(result)
+
+    except Exception as e:
+        traceback.print_exc()
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/api/stock/recommend', methods=['GET'])
+def stock_recommend():
+    """
+    智能选股推荐 - 基于策略推荐股票
+    参数:
+      - strategy: 策略类型 (value-价值, growth-成长, tech-技术, comprehensive-综合)
+      - count: 推荐数量，默认10
+    """
+    try:
+        strategy = request.args.get('strategy', 'comprehensive')
+        count = int(request.args.get('count', 10))
+
+        # 缓存key
+        cache_key = f'recommend_{strategy}_{count}'
+        cached = get_cached(cache_key, 300)
+        if cached:
+            return jsonify(cached)
+
+        # 获取A股实时数据
+        try:
+            df = ak.stock_zh_a_spot_em()
+        except:
+            df = ak.stock_zh_a_spot()
+
+        # 统一列名
+        column_mapping = {
+            '代码': 'code',
+            '名称': 'name',
+            '最新价': 'price',
+            '涨跌幅': 'change_percent',
+            '市盈率-动态': 'pe',
+            '市净率': 'pb',
+            '总市值': 'market_cap',
+            '换手率': 'turnover',
+            '所属行业': 'industry',
+            'ROE': 'roe',
+            '净利润': 'net_profit',
+        }
+        df = df.rename(columns=column_mapping)
+
+        # 数据清洗
+        for col in ['pe', 'pb', 'market_cap', 'turnover', 'roe', 'change_percent']:
+            if col in df.columns:
+                df[col] = pd.to_numeric(df[col], errors='coerce')
+
+        if 'market_cap' in df.columns:
+            df['market_cap'] = df['market_cap'] / 100000000  # 转为亿
+
+        # 根据策略筛选
+        filtered_df = df.copy()
+        strategy_desc = ""
+
+        if strategy == 'value':
+            # 价值策略：低PE、低PB、高ROE、大市值
+            strategy_desc = "低估值高分红，适合稳健投资"
+            filtered_df = filtered_df[
+                (filtered_df['pe'] > 0) & (filtered_df['pe'] < 20) &
+                (filtered_df['pb'] > 0) & (filtered_df['pb'] < 3) &
+                (filtered_df['market_cap'] > 100)
+            ]
+            if 'roe' in filtered_df.columns:
+                filtered_df = filtered_df[filtered_df['roe'] > 8]
+            # 按PE升序（越低越好）
+            filtered_df = filtered_df.sort_values('pe', ascending=True)
+
+        elif strategy == 'growth':
+            # 成长策略：中等PE、高涨幅、高换手、中小市值
+            strategy_desc = "高成长潜力，适合激进投资"
+            filtered_df = filtered_df[
+                (filtered_df['pe'] > 10) & (filtered_df['pe'] < 80) &
+                (filtered_df['market_cap'] > 20) & (filtered_df['market_cap'] < 500) &
+                (filtered_df['change_percent'] > -5)
+            ]
+            if 'turnover' in filtered_df.columns:
+                filtered_df = filtered_df[filtered_df['turnover'] > 2]
+            # 按涨跌幅降序
+            filtered_df = filtered_df.sort_values('change_percent', ascending=False)
+
+        elif strategy == 'tech':
+            # 技术突破策略：高换手、近期强势、量价配合
+            strategy_desc = "趋势跟踪，捕捉技术突破"
+            filtered_df = filtered_df[
+                (filtered_df['change_percent'] > 2) &
+                (filtered_df['market_cap'] > 50)
+            ]
+            if 'turnover' in filtered_df.columns:
+                filtered_df = filtered_df[filtered_df['turnover'] > 5]
+            # 按涨跌幅降序
+            filtered_df = filtered_df.sort_values('change_percent', ascending=False)
+
+        else:  # comprehensive - 综合选股
+            strategy_desc = "多维度综合评分，均衡配置"
+            # 综合评分：PE适中(20-40)、PB适中、市值适中、有涨幅
+            filtered_df = filtered_df[
+                (filtered_df['pe'] > 5) & (filtered_df['pe'] < 50) &
+                (filtered_df['pb'] > 0) & (filtered_df['pb'] < 5) &
+                (filtered_df['market_cap'] > 50) &
+                (filtered_df['change_percent'] > -3)
+            ]
+            # 综合排序：市值适中 + 涨幅适中
+            filtered_df['score'] = (
+                (100 - filtered_df['pe'].clip(0, 100)) * 0.3 +  # PE越低越好
+                (10 - filtered_df['pb'].clip(0, 10)) * 10 * 0.3 +  # PB越低越好
+                filtered_df['change_percent'].clip(-10, 10) * 2 * 0.4  # 涨幅适中偏好
+            )
+            filtered_df = filtered_df.sort_values('score', ascending=False)
+
+        # 取前N个
+        result_df = filtered_df.head(count)
+
+        # 构建返回数据
+        items = []
+        for _, row in result_df.iterrows():
+            item = {
+                'code': str(row.get('code', '')),
+                'name': str(row.get('name', '')),
+                'price': float(row.get('price', 0)) if pd.notna(row.get('price')) else 0,
+                'change_percent': float(row.get('change_percent', 0)) if pd.notna(row.get('change_percent')) else 0,
+                'pe': float(row.get('pe', 0)) if pd.notna(row.get('pe')) else None,
+                'pb': float(row.get('pb', 0)) if pd.notna(row.get('pb')) else None,
+                'market_cap': float(row.get('market_cap', 0)) if pd.notna(row.get('market_cap')) else None,
+                'turnover': float(row.get('turnover', 0)) if pd.notna(row.get('turnover')) else None,
+            }
+            if 'industry' in df.columns:
+                item['industry'] = str(row.get('industry', ''))
+
+            # 生成推荐理由
+            reasons = []
+            if item['pe'] and item['pe'] < 20:
+                reasons.append("估值偏低")
+            if item['pb'] and item['pb'] < 2:
+                reasons.append("市净率合理")
+            if item['change_percent'] and item['change_percent'] > 5:
+                reasons.append("近期强势")
+            if item['turnover'] and item['turnover'] > 5:
+                reasons.append("成交活跃")
+            if item['market_cap'] and item['market_cap'] > 500:
+                reasons.append("大盘蓝筹")
+            elif item['market_cap'] and item['market_cap'] < 100:
+                reasons.append("中小盘成长")
+
+            item['reason'] = "、".join(reasons) if reasons else "符合选股条件"
+            items.append(item)
+
+        result = {
+            'success': True,
+            'strategy': strategy,
+            'strategy_name': {
+                'value': '价值优选',
+                'growth': '成长先锋',
+                'tech': '技术突破',
+                'comprehensive': '综合选股'
+            }.get(strategy, '综合选股'),
+            'strategy_desc': strategy_desc,
+            'count': len(items),
+            'data': items,
+        }
+
+        set_cached(cache_key, result, 300)
+        return jsonify(result)
+
+    except Exception as e:
+        traceback.print_exc()
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/api/stock/industries', methods=['GET'])
+def get_industries():
+    """获取行业列表"""
+    try:
+        cache_key = 'industries'
+        cached = get_cached(cache_key, 3600)
+        if cached:
+            return jsonify(cached)
+
+        # 获取行业数据
+        df = ak.stock_board_industry_name_em()
+
+        items = []
+        for _, row in df.head(50).iterrows():
+            items.append({
+                'name': str(row.get('板块名称', '')),
+                'change': str(row.get('板块涨跌幅', '')),
+            })
+
+        result = {
+            'success': True,
+            'data': items,
+        }
+
+        set_cached(cache_key, result, 3600)
+        return jsonify(result)
 
     except Exception as e:
         traceback.print_exc()
