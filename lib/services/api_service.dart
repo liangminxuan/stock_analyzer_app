@@ -1,9 +1,8 @@
 import 'dart:convert';
 import 'dart:typed_data';
 import 'package:dio/dio.dart';
-import 'package:gbk_codec/gbk_codec.dart';
 
-/// 股票数据API服务 - 使用腾讯财经作为主要数据源
+/// 股票数据API服务 - 腾讯财经 + 东方财富K线
 class StockApiService {
   static final StockApiService _instance = StockApiService._internal();
   factory StockApiService() => _instance;
@@ -11,6 +10,9 @@ class StockApiService {
 
   late Dio _dio;
   bool _initialized = false;
+
+  /// 名称缓存：从搜索接口获取的正确UTF-8名称
+  final Map<String, String> _nameCache = {};
 
   Dio get dio {
     if (!_initialized) init();
@@ -21,44 +23,29 @@ class StockApiService {
     _dio = Dio(BaseOptions(
       connectTimeout: const Duration(seconds: 10),
       receiveTimeout: const Duration(seconds: 10),
-      responseType: ResponseType.bytes,
+      responseType: ResponseType.plain,
       headers: {
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
         'Referer': 'https://gu.qq.com/',
       },
     ));
     _initialized = true;
-    print('[API] 服务初始化完成 - 腾讯财经数据源');
+    print('[API] 服务初始化完成');
   }
 
-  /// GBK 解码
-  String _decodeGbk(Uint8List bytes) {
-    try {
-      return gbk.decode(bytes);
-    } catch (e) {
-      try {
-        return utf8.decode(bytes);
-      } catch (_) {
-        return String.fromCharCodes(bytes);
-      }
-    }
+  /// 获取股票名称（优先缓存 → 预定义 → 代码）
+  String _getName(String code) {
+    final pure = _pureCode(code);
+    return _nameCache[pure] ?? _stockNames[pure] ?? pure;
   }
 
-  /// 发送 GET 请求并 GBK 解码
-  Future<String> _fetchGbk(String url) async {
-    final response = await _dio.get(url);
-    return _decodeGbk(response.data as Uint8List);
-  }
-
-  /// 去掉市场前缀，获取纯代码
+  /// 去掉市场前缀
   String _pureCode(String code) {
-    if (code.startsWith('sh') || code.startsWith('sz')) {
-      return code.substring(2);
-    }
+    if (code.startsWith('sh') || code.startsWith('sz')) return code.substring(2);
     return code;
   }
 
-  /// 获取腾讯格式的股票代码
+  /// 获取腾讯格式代码
   String _tencentCode(String code) {
     final pure = _pureCode(code);
     return pure.startsWith('6') || pure.startsWith('5') ? 'sh$pure' : 'sz$pure';
@@ -70,7 +57,7 @@ class StockApiService {
     return pure.startsWith('6') || pure.startsWith('5') ? 'sh' : 'sz';
   }
 
-  // ==================== 预定义名称 ====================
+  // ==================== 预定义名称（热门股票保底） ====================
 
   static const Map<String, String> _stockNames = {
     '600519': '贵州茅台', '601318': '中国平安', '600036': '招商银行',
@@ -94,35 +81,109 @@ class StockApiService {
     '000016': '上证50', '000300': '沪深300',
   };
 
-  // ==================== 核心接口 ====================
+  // ==================== 搜索（腾讯UTF-8接口） ====================
 
-  /// 解析腾讯单条数据
-  /// 字段索引已通过实际接口验证（2026-05-21）
+  /// 搜索股票 - 使用腾讯搜索接口（返回UTF-8，支持全市场）
+  Future<List<Map<String, dynamic>>> searchStocks(String keyword) async {
+    try {
+      final results = <Map<String, dynamic>>[];
+
+      // 1. 先在预定义列表中搜索
+      for (final entry in _stockNames.entries) {
+        if (entry.key.contains(keyword) || entry.value.contains(keyword)) {
+          results.add({
+            'code': entry.key,
+            'name': entry.value,
+            'market': _market(entry.key),
+          });
+        }
+      }
+
+      // 2. 再从缓存中搜索
+      for (final entry in _nameCache.entries) {
+        if (entry.key.contains(keyword) || entry.value.contains(keyword)) {
+          if (!results.any((r) => r['code'] == entry.key)) {
+            results.add({
+              'code': entry.key,
+              'name': entry.value,
+              'market': _market(entry.key),
+            });
+          }
+        }
+      }
+
+      // 3. 调用腾讯搜索接口（UTF-8，支持全市场）
+      if (keyword.isNotEmpty) {
+        try {
+          final url = 'https://smartbox.gtimg.cn/s3/?v=2&q=${Uri.encodeComponent(keyword)}&t=all';
+          print('[API] 搜索: $url');
+          final response = await _dio.get(url);
+          final text = response.data.toString();
+
+          // 解析: v_hint="sh~688608~恒玄科技~hxkj~GP-A-KCB"
+          final regex = RegExp(r'v_hint="([^"]*)"');
+          final match = regex.firstMatch(text);
+          if (match != null) {
+            final items = match.group(1)!.split('^');
+            for (final item in items) {
+              final parts = item.split('~');
+              if (parts.length >= 3) {
+                final market = parts[0]; // sh/sz
+                final code = parts[1];   // 688608
+                final name = parts[2];   // 恒玄科技 (UTF-8)
+                // 只保留A股（排除基金、债券等）
+                final type = parts.length > 4 ? parts[4] : '';
+                if (type.startsWith('GP-A') || type == 'GP') {
+                  // 缓存名称
+                  _nameCache[code] = name;
+                  if (!results.any((r) => r['code'] == code)) {
+                    results.add({
+                      'code': code,
+                      'name': name,
+                      'market': market,
+                    });
+                  }
+                }
+              }
+            }
+          }
+        } catch (e) {
+          print('[API] 腾讯搜索失败: $e');
+        }
+      }
+
+      print('[API] 搜索"$keyword"返回 ${results.length} 条');
+      return results.take(20).toList();
+    } catch (e) {
+      print('[API] 搜索失败: $e');
+      return [];
+    }
+  }
+
+  // ==================== 行情（腾讯接口） ====================
+
+  /// 解析腾讯单条数据（不依赖GBK解码名称）
   Map<String, dynamic>? _parseTencentLine(String content, String code) {
     try {
       final fields = content.split('~');
       if (fields.length < 45) return null;
 
-      // 优先使用预定义名称（避免GBK解码问题）
       final pure = _pureCode(code);
-      final name = _stockNames[pure] ?? fields[1];
+      // 优先用缓存名称，其次预定义名称，最后用API返回的（可能乱码）
+      final name = _getName(code);
+
       final currentPrice = double.tryParse(fields[3]) ?? 0;
       final prevClose = double.tryParse(fields[4]) ?? 0;
       final openPrice = double.tryParse(fields[5]) ?? 0;
       final volume = int.tryParse(fields[6]) ?? 0;
-      // 已验证的正确索引:
-      // fields[30]=时间, fields[31]=涨跌额, fields[32]=涨跌幅
-      // fields[33]=最高, fields[34]=最低
       final change = double.tryParse(fields[31]) ?? 0;
       final changePercent = double.tryParse(fields[32]) ?? 0;
       final high = double.tryParse(fields[33]) ?? 0;
       final low = double.tryParse(fields[34]) ?? 0;
-      // fields[37]=成交额(万), fields[39]=市盈率, fields[44]=总市值(亿)
       final turnover = double.tryParse(fields[37]) ?? 0;
       final pe = double.tryParse(fields[39]) ?? 0;
       final marketCap = double.tryParse(fields[44]) ?? 0;
 
-      // 五档买卖盘: fields[9~18]=买盘(价格,量), fields[19~28]=卖盘(价格,量)
       final bidPrices = <double>[];
       final bidVolumes = <int>[];
       final askPrices = <double>[];
@@ -167,14 +228,15 @@ class StockApiService {
       final url = 'https://qt.gtimg.cn/q=$tc';
       print('[API] 请求: $url');
 
-      final data = await _fetchGbk(url);
+      final response = await _dio.get(url);
+      final data = response.data.toString();
       final regex = RegExp(r'v_[^=]+="([^"]*)"');
       final match = regex.firstMatch(data);
       if (match == null) return _emptyQuote(code);
 
       final result = _parseTencentLine(match.group(1)!, code);
       if (result != null) {
-        print('[API] 成功: ${result['name']} 价格=${result['currentPrice']} 涨跌=${result['changePercent']}%');
+        print('[API] 成功: ${result['name']} 价格=${result['currentPrice']}');
         return result;
       }
       return _emptyQuote(code);
@@ -184,7 +246,7 @@ class StockApiService {
     }
   }
 
-  /// 获取股票列表（热门股票）- 字段名统一用 currentPrice
+  /// 获取股票列表
   Future<List<Map<String, dynamic>>> getStockList({int page = 1, int pageSize = 20}) async {
     try {
       final hotCodes = [
@@ -201,18 +263,16 @@ class StockApiService {
 
       final tcCodes = codes.map((c) => _tencentCode(c)).join(',');
       final url = 'https://qt.gtimg.cn/q=$tcCodes';
-      print('[API] 批量请求 ${codes.length} 只');
 
-      final data = await _fetchGbk(url);
+      final response = await _dio.get(url);
+      final data = response.data.toString();
       final results = <Map<String, dynamic>>[];
       final regex = RegExp(r'v_([^=]+)="([^"]*)"');
 
       for (final match in regex.allMatches(data)) {
         final tcCode = match.group(1)!;
         final result = _parseTencentLine(match.group(2)!, tcCode);
-        if (result != null) {
-          results.add(result);
-        }
+        if (result != null) results.add(result);
       }
 
       print('[API] 获取 ${results.length} 条');
@@ -229,7 +289,8 @@ class StockApiService {
       final indices = ['sh000001', 'sz399001', 'sz399006'];
       final url = 'https://qt.gtimg.cn/q=${indices.join(',')}';
 
-      final data = await _fetchGbk(url);
+      final response = await _dio.get(url);
+      final data = response.data.toString();
       final results = <Map<String, dynamic>>[];
       final regex = RegExp(r'v_([^=]+)="([^"]*)"');
 
@@ -255,56 +316,42 @@ class StockApiService {
     }
   }
 
-  /// 获取K线数据 - 使用东方财富接口（腾讯接口已失效）
+  // ==================== K线（东方财富接口，返回UTF-8 JSON） ====================
+
   Future<List<Map<String, dynamic>>> getKLineData({
     required String code,
     String period = 'day',
     int count = 100,
   }) async {
     try {
-      // 统一去掉市场前缀
       final pure = _pureCode(code);
-      // 东方财富市场代码: 1=沪市, 0=深市
       final secid = pure.startsWith('6') ? '1.$pure' : '0.$pure';
-      // K线类型: 101=日K, 102=周K, 103=月K
       final klt = period == 'day' ? '101' : period == 'week' ? '102' : '103';
 
       final url = 'https://push2his.eastmoney.com/api/qt/stock/kline/get'
           '?secid=$secid'
           '&fields1=f1,f2,f3,f4,f5,f6'
           '&fields2=f51,f52,f53,f54,f55,f56,f57,f58,f59,f60,f61,f62,f63,f64,f65'
-          '&klt=$klt'
-          '&fqt=1'
-          '&end=20500101'
-          '&lmt=$count';
+          '&klt=$klt&fqt=1&end=20500101&lmt=$count';
 
-      print('[API] K线请求(东方财富): $secid klt=$klt lmt=$count');
+      print('[API] K线: $secid klt=$klt');
 
       final response = await _dio.get(url);
-      final text = _decodeGbk(response.data as Uint8List);
-      
-      // 解析JSON
+      final text = response.data.toString();
+
       final jsonStart = text.indexOf('{');
-      if (jsonStart < 0) {
-        print('[API] K线返回非JSON: ${text.substring(0, 100)}');
-        return [];
-      }
-      
+      if (jsonStart < 0) return [];
+
       final jsonData = json.decode(text.substring(jsonStart)) as Map<String, dynamic>;
       final klines = jsonData['data']?['klines'] as List<dynamic>?;
-      
-      if (klines == null || klines.isEmpty) {
-        print('[API] K线数据为空');
-        return [];
-      }
+      if (klines == null || klines.isEmpty) return [];
 
       final results = <Map<String, dynamic>>[];
       for (final kline in klines) {
-        // 东方财富格式: 日期,开,收,高,低,成交量,成交额,振幅,涨跌幅,涨跌额,换手率
         final fields = (kline as String).split(',');
         if (fields.length >= 6) {
           results.add({
-            'time': fields[0], // 已经是 yyyy-MM-dd 格式
+            'time': fields[0],
             'open': double.tryParse(fields[1]) ?? 0,
             'close': double.tryParse(fields[2]) ?? 0,
             'high': double.tryParse(fields[3]) ?? 0,
@@ -314,35 +361,10 @@ class StockApiService {
         }
       }
 
-      print('[API] K线获取 ${results.length} 条');
+      print('[API] K线 ${results.length} 条');
       return results;
     } catch (e) {
       print('[API] K线失败: $e');
-      return [];
-    }
-  }
-
-  /// 搜索股票
-  Future<List<Map<String, dynamic>>> searchStocks(String keyword) async {
-    try {
-      final results = <Map<String, dynamic>>[];
-      for (final entry in _stockNames.entries) {
-        if (entry.key.contains(keyword) || entry.value.contains(keyword)) {
-          results.add({
-            'code': entry.key,
-            'name': entry.value,
-            'market': _market(entry.key),
-          });
-        }
-      }
-      if (results.length < 5 && keyword.length == 6) {
-        final quote = await getStockQuote(keyword);
-        if ((quote['currentPrice'] as num) > 0) {
-          results.add(quote);
-        }
-      }
-      return results.take(20).toList();
-    } catch (e) {
       return [];
     }
   }
@@ -353,7 +375,7 @@ class StockApiService {
     final pure = _pureCode(code);
     return {
       'code': pure,
-      'name': _stockNames[pure] ?? pure,
+      'name': _getName(code),
       'market': _market(pure),
       'currentPrice': 0.0,
       'previousClose': 0.0,
