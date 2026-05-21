@@ -34,9 +34,72 @@ def set_cached(key, data, timeout_seconds=300):
     _cache_timeout[key] = time.time() + timeout_seconds
 
 
+# ========== 全局股票数据缓存 ==========
+_stock_data_cache = {
+    'df': None,
+    'last_update': 0,
+    'loading': False,
+}
+
+def get_stock_data():
+    """获取A股实时数据（带缓存，缓存30分钟）"""
+    import time
+    now = time.time()
+    
+    # 缓存有效期内直接返回
+    if _stock_data_cache['df'] is not None and (now - _stock_data_cache['last_update']) < 1800:
+        return _stock_data_cache['df']
+    
+    # 避免并发重复加载
+    if _stock_data_cache['loading']:
+        return _stock_data_cache['df']
+    
+    _stock_data_cache['loading'] = True
+    try:
+        print("[get_stock_data] 开始获取A股实时数据...")
+        try:
+            df = ak.stock_zh_a_spot_em()
+            print(f"[get_stock_data] stock_zh_a_spot_em() 成功, {len(df)} 行")
+        except Exception as e1:
+            print(f"[get_stock_data] 东方财富接口失败: {e1}, 尝试备用接口...")
+            try:
+                df = ak.stock_zh_a_spot()
+                print(f"[get_stock_data] stock_zh_a_spot() 成功, {len(df)} 行")
+            except Exception as e2:
+                print(f"[get_stock_data] 备用接口也失败: {e2}")
+                _stock_data_cache['loading'] = False
+                return None
+        
+        _stock_data_cache['df'] = df
+        _stock_data_cache['last_update'] = now
+        return df
+    finally:
+        _stock_data_cache['loading'] = False
+
+
+def warmup_stock_data():
+    """后台预热股票数据"""
+    import threading
+    def _load():
+        try:
+            get_stock_data()
+            print("[warmup] 股票数据预热完成")
+        except Exception as e:
+            print(f"[warmup] 预热失败: {e}")
+    t = threading.Thread(target=_load, daemon=True)
+    t.start()
+
+
+# 启动时预热
+warmup_stock_data()
+
+
 @app.route('/health', methods=['GET'])
 def health():
-    """健康检查"""
+    """健康检查（同时触发数据预热）"""
+    # 如果缓存为空，触发预热
+    if _stock_data_cache['df'] is None and not _stock_data_cache['loading']:
+        warmup_stock_data()
     return jsonify({'status': 'ok', 'time': datetime.now().isoformat()})
 
 
@@ -389,16 +452,10 @@ def stock_screen():
         if cached:
             return jsonify(cached)
 
-        # 获取A股实时行情数据
-        try:
-            df = ak.stock_zh_a_spot_em()
-        except Exception as e1:
-            print(f"东方财富接口失败: {e1}")
-            try:
-                df = ak.stock_zh_a_spot()
-            except Exception as e2:
-                print(f"备用接口也失败: {e2}")
-                return jsonify({'success': False, 'error': '无法获取股票数据', 'data': []}), 500
+        # 获取A股实时行情数据（使用全局缓存）
+        df = get_stock_data()
+        if df is None:
+            return jsonify({'success': False, 'error': '无法获取股票数据，请稍后重试', 'data': []}), 200
 
         # 标准化列名
         df = normalize_stock_data(df)
@@ -524,16 +581,10 @@ def stock_recommend():
         if cached:
             return jsonify(cached)
 
-        # 获取A股实时数据
-        try:
-            df = ak.stock_zh_a_spot_em()
-        except Exception as e1:
-            print(f"东方财富接口失败: {e1}")
-            try:
-                df = ak.stock_zh_a_spot()
-            except Exception as e2:
-                print(f"备用接口也失败: {e2}")
-                return jsonify({'success': False, 'error': '无法获取股票数据', 'data': []}), 500
+        # 获取A股实时数据（使用全局缓存）
+        df = get_stock_data()
+        if df is None:
+            return jsonify({'success': False, 'error': '无法获取股票数据，请稍后重试', 'data': []}), 200
 
         # 标准化列名
         df = normalize_stock_data(df)
