@@ -255,7 +255,7 @@ class StockApiService {
     }
   }
 
-  /// 获取K线数据 - 自动处理市场前缀
+  /// 获取K线数据 - 使用东方财富接口（腾讯接口已失效）
   Future<List<Map<String, dynamic>>> getKLineData({
     required String code,
     String period = 'day',
@@ -264,35 +264,54 @@ class StockApiService {
     try {
       // 统一去掉市场前缀
       final pure = _pureCode(code);
-      final mkt = _market(pure);
-      final type = period == 'day' ? 'day' : period == 'week' ? 'week' : 'month';
+      // 东方财富市场代码: 1=沪市, 0=深市
+      final secid = pure.startsWith('6') ? '1.$pure' : '0.$pure';
+      // K线类型: 101=日K, 102=周K, 103=月K
+      final klt = period == 'day' ? '101' : period == 'week' ? '102' : '103';
 
-      final url = 'https://web.ifzq.gtimg.cn/appstock/app/fwk/getkline'
-          '?_var=mk_$mkt$pure'
-          '&param=$mkt$pure,$type,,,$count,';
+      final url = 'https://push2his.eastmoney.com/api/qt/stock/kline/get'
+          '?secid=$secid'
+          '&fields1=f1,f2,f3,f4,f5,f6'
+          '&fields2=f51,f52,f53,f54,f55,f56,f57,f58,f59,f60,f61,f62,f63,f64,f65'
+          '&klt=$klt'
+          '&fqt=1'
+          '&end=20500101'
+          '&lmt=$count';
 
-      print('[API] K线请求: $mkt$pure $type x$count');
+      print('[API] K线请求(东方财富): $secid klt=$klt lmt=$count');
 
       final response = await _dio.get(url);
-      final data = _decodeGbk(response.data as Uint8List);
+      final text = _decodeGbk(response.data as Uint8List);
+      
+      // 解析JSON
+      final jsonStart = text.indexOf('{');
+      if (jsonStart < 0) {
+        print('[API] K线返回非JSON: ${text.substring(0, 100)}');
+        return [];
+      }
+      
+      final jsonData = json.decode(text.substring(jsonStart)) as Map<String, dynamic>;
+      final klines = jsonData['data']?['klines'] as List<dynamic>?;
+      
+      if (klines == null || klines.isEmpty) {
+        print('[API] K线数据为空');
+        return [];
+      }
 
       final results = <Map<String, dynamic>>[];
-      // 匹配 [时间,开盘,收盘,最高,最低,成交量,...]
-      final regex = RegExp(r'\["?(\d{8})"?,([\d.]+),([\d.]+),([\d.]+),([\d.]+),(\d+)');
-
-      for (final match in regex.allMatches(data)) {
-        final timeStr = match.group(1)!;
-        // 将 20240101 转为 2024-01-01
-        final formattedTime = '${timeStr.substring(0,4)}-${timeStr.substring(4,6)}-${timeStr.substring(6,8)}';
-
-        results.add({
-          'time': formattedTime,
-          'open': double.tryParse(match.group(2)!) ?? 0,
-          'close': double.tryParse(match.group(3)!) ?? 0,
-          'high': double.tryParse(match.group(4)!) ?? 0,
-          'low': double.tryParse(match.group(5)!) ?? 0,
-          'volume': int.tryParse(match.group(6)!) ?? 0,
-        });
+      for (final kline in klines) {
+        // 东方财富格式: 日期,开,收,高,低,成交量,成交额,振幅,涨跌幅,涨跌额,换手率
+        final fields = (kline as String).split(',');
+        if (fields.length >= 6) {
+          results.add({
+            'time': fields[0], // 已经是 yyyy-MM-dd 格式
+            'open': double.tryParse(fields[1]) ?? 0,
+            'close': double.tryParse(fields[2]) ?? 0,
+            'high': double.tryParse(fields[3]) ?? 0,
+            'low': double.tryParse(fields[4]) ?? 0,
+            'volume': int.tryParse(fields[5]) ?? 0,
+          });
+        }
       }
 
       print('[API] K线获取 ${results.length} 条');
