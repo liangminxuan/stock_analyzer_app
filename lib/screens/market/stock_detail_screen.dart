@@ -5,10 +5,9 @@ import '../../config/theme.dart';
 import '../../models/stock.dart';
 import '../../models/kline.dart';
 import '../../providers/stock_provider.dart';
-import '../../widgets/kline_chart.dart';
 import '../../widgets/loading_widget.dart';
 
-/// 股票详情页
+/// 股票详情页 - 使用新浪K线图片
 class StockDetailScreen extends StatefulWidget {
   final String stockCode;
   final String stockName;
@@ -24,6 +23,8 @@ class StockDetailScreen extends StatefulWidget {
 }
 
 class _StockDetailScreenState extends State<StockDetailScreen> {
+  String _currentPeriod = 'daily'; // daily, weekly, monthly
+
   @override
   void initState() {
     super.initState();
@@ -34,14 +35,20 @@ class _StockDetailScreenState extends State<StockDetailScreen> {
 
   Future<void> _loadData() async {
     final provider = context.read<StockProvider>();
-    // 去掉市场前缀，获取纯代码
     String pureCode = widget.stockCode;
     if (pureCode.startsWith('sh') || pureCode.startsWith('sz')) {
       pureCode = pureCode.substring(2);
     }
-    print('[StockDetailScreen] 加载数据，代码: $pureCode (原始: ${widget.stockCode})');
+    print('[StockDetailScreen] 加载数据: $pureCode');
     await provider.fetchStockDetail(pureCode);
-    await provider.fetchKLineData(code: pureCode);
+  }
+
+  /// 获取新浪K线图片URL
+  String _getKLineImageUrl(String period) {
+    // 新浪K线图片接口
+    // daily: 日K, weekly: 周K, monthly: 月K
+    final marketCode = widget.stockCode; // 已经是 sh/sz 前缀格式
+    return 'https://image.sinajs.cn/newchart/$period/n/$marketCode.gif';
   }
 
   @override
@@ -89,8 +96,8 @@ class _StockDetailScreenState extends State<StockDetailScreen> {
                   // 周期切换
                   _buildPeriodSelector(),
                   
-                  // K线图
-                  _buildKLineChart(),
+                  // K线图片
+                  _buildKLineImage(),
                   
                   // AI分析按钮
                   _buildAIAnalysisButton(),
@@ -205,70 +212,82 @@ class _StockDetailScreenState extends State<StockDetailScreen> {
   /// 构建周期选择器
   Widget _buildPeriodSelector() {
     final periods = ['分时', '日K', '周K', '月K'];
-    final periodCodes = ['min', 'day', 'week', 'month'];
+    final periodCodes = ['min', 'daily', 'weekly', 'monthly'];
     
-    return Consumer<StockProvider>(
-      builder: (context, provider, child) {
-        return Container(
-          padding: EdgeInsets.symmetric(horizontal: 16.w, vertical: 8.h),
-          child: Row(
-            children: List.generate(periods.length, (index) {
-              final isSelected = provider.currentPeriod == periodCodes[index];
-              return Expanded(
-                child: GestureDetector(
-                  onTap: () => provider.switchPeriod(periodCodes[index]),
-                  child: Container(
-                    padding: EdgeInsets.symmetric(vertical: 8.h),
-                    decoration: BoxDecoration(
-                      color: isSelected
-                          ? Theme.of(context).colorScheme.primary
-                          : Colors.transparent,
-                      borderRadius: BorderRadius.circular(4.r),
-                    ),
-                    child: Text(
-                      periods[index],
-                      textAlign: TextAlign.center,
-                      style: TextStyle(
-                        fontSize: 14.sp,
-                        color: isSelected
-                            ? Colors.white
-                            : Theme.of(context).colorScheme.onSurface,
-                        fontWeight: isSelected ? FontWeight.w600 : FontWeight.normal,
-                      ),
-                    ),
+    return Container(
+      padding: EdgeInsets.symmetric(horizontal: 16.w, vertical: 8.h),
+      child: Row(
+        children: List.generate(periods.length, (index) {
+          final isSelected = _currentPeriod == periodCodes[index];
+          return Expanded(
+            child: GestureDetector(
+              onTap: () {
+                setState(() {
+                  _currentPeriod = periodCodes[index];
+                });
+              },
+              child: Container(
+                padding: EdgeInsets.symmetric(vertical: 8.h),
+                decoration: BoxDecoration(
+                  color: isSelected
+                      ? Theme.of(context).colorScheme.primary
+                      : Colors.transparent,
+                  borderRadius: BorderRadius.circular(4.r),
+                ),
+                child: Text(
+                  periods[index],
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    fontSize: 14.sp,
+                    color: isSelected
+                        ? Colors.white
+                        : Theme.of(context).colorScheme.onSurface,
+                    fontWeight: isSelected ? FontWeight.w600 : FontWeight.normal,
                   ),
                 ),
-              );
-            }),
-          ),
-        );
-      },
+              ),
+            ),
+          );
+        }),
+      ),
     );
   }
 
-  /// 构建K线图
-  Widget _buildKLineChart() {
-    return Consumer<StockProvider>(
-      builder: (context, provider, child) {
-        if (provider.klineData.isEmpty) {
-          return Container(
-            height: 300.h,
-            alignment: Alignment.center,
-            child: const Text('暂无K线数据'),
+  /// 构建K线图片（新浪图片）
+  Widget _buildKLineImage() {
+    final imageUrl = _getKLineImageUrl(_currentPeriod);
+    print('[StockDetailScreen] K线图片: $imageUrl');
+    
+    return Container(
+      height: 300.h,
+      padding: EdgeInsets.all(16.w),
+      child: Image.network(
+        imageUrl,
+        fit: BoxFit.contain,
+        loadingBuilder: (context, child, loadingProgress) {
+          if (loadingProgress == null) return child;
+          return Center(
+            child: CircularProgressIndicator(
+              value: loadingProgress.expectedTotalBytes != null
+                  ? loadingProgress.cumulativeBytesLoaded / loadingProgress.expectedTotalBytes!
+                  : null,
+            ),
           );
-        }
-
-        return Container(
-          height: 400.h,
-          padding: EdgeInsets.all(16.w),
-          child: KLineChart(
-            data: provider.klineData,
-            onTap: (index) {
-              // TODO: 显示选中K线详情
-            },
-          ),
-        );
-      },
+        },
+        errorBuilder: (context, error, stackTrace) {
+          print('[StockDetailScreen] K线图片加载失败: $error');
+          return Center(
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Icon(Icons.error_outline, size: 48.sp, color: Colors.grey),
+                SizedBox(height: 8.h),
+                Text('K线图片加载失败', style: TextStyle(color: Colors.grey)),
+              ],
+            ),
+          );
+        },
+      ),
     );
   }
 
@@ -316,6 +335,8 @@ class _StockDetailScreenState extends State<StockDetailScreen> {
     if (pureCode.startsWith('sh') || pureCode.startsWith('sz')) {
       pureCode = pureCode.substring(2);
     }
+    
+    print('[StockDetailScreen] AI分析: $pureCode');
     await provider.analyzeKLine(pureCode, widget.stockName);
 
     if (context.mounted) {
@@ -324,6 +345,11 @@ class _StockDetailScreenState extends State<StockDetailScreen> {
       final analysis = provider.klineAnalysis;
       if (analysis != null) {
         _showAnalysisResult(context, analysis);
+      } else {
+        // 显示错误提示
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('AI分析失败，请稍后重试')),
+        );
       }
     }
   }
@@ -341,85 +367,36 @@ class _StockDetailScreenState extends State<StockDetailScreen> {
         builder: (context, scrollController) {
           return Container(
             padding: EdgeInsets.all(16.w),
-            child: ListView(
+            child: SingleChildScrollView(
               controller: scrollController,
-              children: [
-                // 标题
-                Row(
-                  children: [
-                    Icon(
-                      Icons.auto_awesome,
-                      color: Theme.of(context).colorScheme.primary,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'AI智能分析',
+                    style: TextStyle(
+                      fontSize: 20.sp,
+                      fontWeight: FontWeight.bold,
                     ),
-                    SizedBox(width: 8.w),
-                    Text(
-                      'AI分析结果',
-                      style: TextStyle(
-                        fontSize: 18.sp,
-                        fontWeight: FontWeight.bold,
-                      ),
+                  ),
+                  SizedBox(height: 16.h),
+                  _buildAnalysisSection('趋势判断', analysis.trend, analysis.trendDescription),
+                  _buildAnalysisSection('技术指标', analysis.technicalSummary, ''),
+                  _buildAnalysisSection('交易建议', analysis.tradingAdvice, ''),
+                  if (analysis.patterns.isNotEmpty)
+                    _buildAnalysisSection('形态识别', analysis.patterns.join('、'), ''),
+                  if (analysis.riskWarnings.isNotEmpty)
+                    _buildAnalysisSection('风险提示', analysis.riskWarnings.join('、'), ''),
+                  SizedBox(height: 16.h),
+                  Text(
+                    '免责声明：以上分析仅供参考，不构成投资建议',
+                    style: TextStyle(
+                      fontSize: 12.sp,
+                      color: Colors.grey,
                     ),
-                    const Spacer(),
-                    Container(
-                      padding: EdgeInsets.symmetric(horizontal: 8.w, vertical: 4.h),
-                      decoration: BoxDecoration(
-                        color: Theme.of(context).colorScheme.primary.withOpacity(0.1),
-                        borderRadius: BorderRadius.circular(4.r),
-                      ),
-                      child: Text(
-                        '信心度: ${analysis.confidenceScore}%',
-                        style: TextStyle(
-                          fontSize: 12.sp,
-                          color: Theme.of(context).colorScheme.primary,
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-                SizedBox(height: 16.h),
-                
-                // 趋势判断
-                _buildAnalysisSection('趋势判断', analysis.trendDescription),
-                
-                // 形态识别
-                if (analysis.patterns.isNotEmpty)
-                  _buildAnalysisSection(
-                    '形态识别',
-                    analysis.patterns.join('\n'),
                   ),
-                
-                // 支撑阻力
-                _buildAnalysisSection(
-                  '支撑与阻力',
-                  '支撑位: ${analysis.supportLevel.toStringAsFixed(2)}\n'
-                  '阻力位: ${analysis.resistanceLevel.toStringAsFixed(2)}',
-                ),
-                
-                // 技术指标
-                _buildAnalysisSection('技术指标', analysis.technicalSummary),
-                
-                // 交易建议
-                _buildAnalysisSection('交易建议', analysis.tradingAdvice, isHighlight: true),
-                
-                // 风险提示
-                if (analysis.riskWarnings.isNotEmpty)
-                  _buildAnalysisSection(
-                    '风险提示',
-                    analysis.riskWarnings.join('\n'),
-                    isWarning: true,
-                  ),
-                
-                SizedBox(height: 24.h),
-                
-                // 免责声明
-                Text(
-                  '免责声明：以上分析仅供参考，不构成投资建议。股市有风险，投资需谨慎。',
-                  style: TextStyle(
-                    fontSize: 11.sp,
-                    color: Theme.of(context).colorScheme.onSurface.withOpacity(0.5),
-                  ),
-                ),
-              ],
+                ],
+              ),
             ),
           );
         },
@@ -427,29 +404,9 @@ class _StockDetailScreenState extends State<StockDetailScreen> {
     );
   }
 
-  /// 构建分析区块
-  Widget _buildAnalysisSection(String title, String content, {
-    bool isHighlight = false,
-    bool isWarning = false,
-  }) {
-    return Container(
-      margin: EdgeInsets.only(bottom: 16.h),
-      padding: EdgeInsets.all(12.w),
-      decoration: BoxDecoration(
-        color: isHighlight
-            ? Theme.of(context).colorScheme.primary.withOpacity(0.05)
-            : isWarning
-                ? AppTheme.error.withOpacity(0.05)
-                : Theme.of(context).colorScheme.surface,
-        borderRadius: BorderRadius.circular(8.r),
-        border: isHighlight || isWarning
-            ? Border.all(
-                color: isHighlight
-                    ? Theme.of(context).colorScheme.primary.withOpacity(0.3)
-                    : AppTheme.error.withOpacity(0.3),
-              )
-            : null,
-      ),
+  Widget _buildAnalysisSection(String title, String content, String description) {
+    return Padding(
+      padding: EdgeInsets.only(bottom: 16.h),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -458,24 +415,34 @@ class _StockDetailScreenState extends State<StockDetailScreen> {
             style: TextStyle(
               fontSize: 14.sp,
               fontWeight: FontWeight.w600,
-              color: isWarning ? AppTheme.error : null,
+              color: Theme.of(context).colorScheme.primary,
             ),
           ),
-          SizedBox(height: 8.h),
+          SizedBox(height: 4.h),
           Text(
             content,
             style: TextStyle(
-              fontSize: 14.sp,
-              height: 1.6,
-              color: Theme.of(context).colorScheme.onSurface.withOpacity(0.8),
+              fontSize: 16.sp,
+              fontWeight: FontWeight.w500,
             ),
           ),
+          if (description.isNotEmpty)
+            Padding(
+              padding: EdgeInsets.only(top: 4.h),
+              child: Text(
+                description,
+                style: TextStyle(
+                  fontSize: 12.sp,
+                  color: Colors.grey,
+                ),
+              ),
+            ),
         ],
       ),
     );
   }
 
-  /// 构建盘口
+  /// 构建盘口数据
   Widget _buildOrderBook(Stock stock) {
     return Container(
       padding: EdgeInsets.all(16.w),
@@ -492,36 +459,12 @@ class _StockDetailScreenState extends State<StockDetailScreen> {
           SizedBox(height: 12.h),
           Row(
             children: [
-              // 卖盘
               Expanded(
-                child: Column(
-                  children: List.generate(5, (index) {
-                    final price = stock.askPrices.reversed.toList()[index];
-                    final volume = stock.askVolumes.reversed.toList()[index];
-                    return _buildOrderBookRow(
-                      '卖${5 - index}',
-                      price,
-                      volume,
-                      AppTheme.downColor,
-                    );
-                  }),
-                ),
+                child: _buildOrderBookSide('卖', stock.askPrices.reversed.toList(), stock.askVolumes.reversed.toList(), false),
               ),
               SizedBox(width: 16.w),
-              // 买盘
               Expanded(
-                child: Column(
-                  children: List.generate(5, (index) {
-                    final price = stock.bidPrices[index];
-                    final volume = stock.bidVolumes[index];
-                    return _buildOrderBookRow(
-                      '买${index + 1}',
-                      price,
-                      volume,
-                      AppTheme.upColor,
-                    );
-                  }),
-                ),
+                child: _buildOrderBookSide('买', stock.bidPrices, stock.bidVolumes, true),
               ),
             ],
           ),
@@ -530,39 +473,44 @@ class _StockDetailScreenState extends State<StockDetailScreen> {
     );
   }
 
-  /// 构建盘口行
-  Widget _buildOrderBookRow(String label, double price, int volume, Color color) {
-    return Padding(
-      padding: EdgeInsets.symmetric(vertical: 4.h),
-      child: Row(
-        children: [
-          Text(
-            label,
-            style: TextStyle(
-              fontSize: 12.sp,
-              color: Theme.of(context).colorScheme.onSurface.withOpacity(0.6),
-            ),
-          ),
-          SizedBox(width: 8.w),
-          Expanded(
-            child: Text(
-              price.toStringAsFixed(2),
-              style: TextStyle(
-                fontSize: 13.sp,
-                color: color,
-                fontWeight: FontWeight.w500,
+  Widget _buildOrderBookSide(String label, List<double> prices, List<int> volumes, bool isBuy) {
+    return Column(
+      children: List.generate(5, (index) {
+        final price = index < prices.length ? prices[index] : 0.0;
+        final volume = index < volumes.length ? volumes[index] : 0;
+        final color = isBuy ? AppTheme.upColor : AppTheme.downColor;
+        
+        return Padding(
+          padding: EdgeInsets.symmetric(vertical: 4.h),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Text(
+                '$label${5 - index}',
+                style: TextStyle(
+                  fontSize: 12.sp,
+                  color: Colors.grey,
+                ),
               ),
-            ),
+              Text(
+                price.toStringAsFixed(2),
+                style: TextStyle(
+                  fontSize: 14.sp,
+                  color: price > 0 ? color : Colors.grey,
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+              Text(
+                volume > 0 ? (volume / 100).toStringAsFixed(0) : '-',
+                style: TextStyle(
+                  fontSize: 12.sp,
+                  color: Colors.grey,
+                ),
+              ),
+            ],
           ),
-          Text(
-            volume.toString(),
-            style: TextStyle(
-              fontSize: 12.sp,
-              color: Theme.of(context).colorScheme.onSurface.withOpacity(0.6),
-            ),
-          ),
-        ],
-      ),
+        );
+      }),
     );
   }
 
@@ -581,18 +529,14 @@ class _StockDetailScreenState extends State<StockDetailScreen> {
             ),
           ),
           SizedBox(height: 12.h),
-          _buildInfoRow('股票代码', stock.code),
-          _buildInfoRow('所属市场', stock.market == 'sh' ? '上海证券交易所' : '深圳证券交易所'),
-          if (stock.industry != null)
-            _buildInfoRow('所属行业', stock.industry!),
-          _buildInfoRow('市盈率', stock.peRatio > 0 ? stock.peRatio.toStringAsFixed(2) : '-'),
-          _buildInfoRow('市净率', stock.pbRatio > 0 ? stock.pbRatio.toStringAsFixed(2) : '-'),
+          _buildInfoRow('股票代码', '${stock.market}${stock.code}'),
+          _buildInfoRow('市盈率', stock.pe?.toStringAsFixed(2) ?? '-'),
+          _buildInfoRow('总市值', stock.marketCapText),
         ],
       ),
     );
   }
 
-  /// 构建信息行
   Widget _buildInfoRow(String label, String value) {
     return Padding(
       padding: EdgeInsets.symmetric(vertical: 8.h),
@@ -603,7 +547,7 @@ class _StockDetailScreenState extends State<StockDetailScreen> {
             label,
             style: TextStyle(
               fontSize: 14.sp,
-              color: Theme.of(context).colorScheme.onSurface.withOpacity(0.6),
+              color: Colors.grey,
             ),
           ),
           Text(
@@ -618,17 +562,12 @@ class _StockDetailScreenState extends State<StockDetailScreen> {
     );
   }
 
-  /// 构建错误组件
   Widget _buildErrorWidget(String error) {
     return Center(
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          Icon(
-            Icons.error_outline,
-            size: 48.sp,
-            color: Theme.of(context).colorScheme.error,
-          ),
+          Icon(Icons.error_outline, size: 48.sp, color: Colors.red),
           SizedBox(height: 16.h),
           Text(error),
           SizedBox(height: 16.h),
