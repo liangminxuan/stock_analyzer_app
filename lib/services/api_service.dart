@@ -121,16 +121,27 @@ class StockApiService {
           final text = response.data.toString();
 
           // 解析: v_hint="sh~688608~恒玄科技~hxkj~GP-A-KCB"
+          // 注意：接口返回的是 Unicode 转义序列如 \u6052\u7384，需要用 json.decode 解码
           final regex = RegExp(r'v_hint="([^"]*)"');
           final match = regex.firstMatch(text);
           if (match != null) {
-            final items = match.group(1)!.split('^');
+            // 将 v_hint="..." 包装成 JSON 来解码 Unicode 转义
+            final rawHint = '"{hint}"'.replaceAll('{hint}', match.group(1)!);
+            String decodedHint;
+            try {
+              final decoded = json.decode(rawHint) as String;
+              decodedHint = decoded;
+            } catch (_) {
+              decodedHint = match.group(1)!; // 解码失败就用原始文本
+            }
+
+            final items = decodedHint.split('^');
             for (final item in items) {
               final parts = item.split('~');
               if (parts.length >= 3) {
                 final market = parts[0]; // sh/sz
                 final code = parts[1];   // 688608
-                final name = parts[2];   // 恒玄科技 (UTF-8)
+                final name = parts[2];   // 恒玄科技 (已解码)
                 // 只保留A股（排除基金、债券等）
                 final type = parts.length > 4 ? parts[4] : '';
                 if (type.startsWith('GP-A') || type == 'GP') {
