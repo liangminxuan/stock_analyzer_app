@@ -731,21 +731,27 @@ def get_announcement_detail():
         url = request.args.get('url', '')
         title = request.args.get('title', '')
         stock_name = request.args.get('stock_name', '')
+        
+        print(f"[get_announcement_detail] 请求: url={url}, title={title}, stock_name={stock_name}")
 
         if not url:
             return jsonify({'success': False, 'error': '缺少URL参数'}), 400
 
         # 基于标题生成深度解读（不获取原文，因为公告网站通常有反爬）
         interpretation = generate_announcement_interpretation(title, "", stock_name)
+        
+        print(f"[get_announcement_detail] 解读结果: {interpretation}")
 
-        return jsonify({
+        result = {
             'success': True,
             'title': title,
             'stock_name': stock_name,
             'url': url,
             'content_preview': '点击查看原文链接查看详细内容',
             'interpretation': interpretation,
-        })
+        }
+        print(f"[get_announcement_detail] 返回: {result}")
+        return jsonify(result)
 
     except Exception as e:
         error_detail = traceback.format_exc()

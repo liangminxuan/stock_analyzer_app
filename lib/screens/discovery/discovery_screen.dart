@@ -635,11 +635,15 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
         trailing: const Icon(Icons.chevron_right),
         onTap: () {
           final code = stock['code']?.toString() ?? '';
+          // 后端返回的code已经包含sh/sz前缀
+          final fullCode = code.startsWith('sh') || code.startsWith('sz') 
+              ? code 
+              : '${code.startsWith('6') ? 'sh' : 'sz'}$code';
           Navigator.pushNamed(
             context,
             Routes.stockDetail,
             arguments: {
-              'code': '${code.startsWith('6') ? 'sh' : 'sz'}$code',
+              'code': fullCode,
               'name': stock['name'] ?? '',
             },
           );
