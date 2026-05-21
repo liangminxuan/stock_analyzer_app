@@ -243,7 +243,7 @@ class StockProvider extends ChangeNotifier {
 
     // 涨跌幅
     final firstPrice = prices.first;
-    final changePercent = firstPrice != 0 ? ((lastPrice - firstPrice) / firstPrice) * 100 : 0;
+    final changePercent = firstPrice != 0 ? ((lastPrice - firstPrice) / firstPrice) * 100 : 0.0;
 
     // 成交量分析
     final avgVolume = volumes.length > 1 ? volumes.sublist(0, volumes.length - 1).reduce((a, b) => a + b) / (volumes.length - 1) : 0;
