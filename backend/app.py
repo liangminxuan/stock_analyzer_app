@@ -167,18 +167,69 @@ def get_stock_financial():
         if cached:
             return jsonify(cached)
 
-        # 获取财务摘要
-        df = ak.stock_financial_abstract_ths(symbol=code, indicator="按报告期")
+        # 判断是否为A股（6/0/3开头的6位数字）
+        is_a_stock = len(code) == 6 and code[0] in ('6', '0', '3', '8', '4')
 
-        # 按报告期倒序排列（最新的在前）
-        if '报告期' in df.columns:
-            df = df.sort_values('报告期', ascending=False)
+        df = None
+        source = ''
+
+        if is_a_stock:
+            # A股：优先使用同花顺财务摘要
+            try:
+                df = ak.stock_financial_abstract_ths(symbol=code, indicator="按报告期")
+                source = 'ths'
+            except Exception as e:
+                print(f"同花顺财务摘要失败({code}): {e}")
+
+        if df is None or (hasattr(df, 'empty') and df.empty):
+            # 备用：东方财富利润表
+            try:
+                market = 'SH' if code.startswith('6') else 'SZ'
+                df_profit = ak.stock_profit_sheet_by_report_em(symbol=f"{code}.{market}")
+                if df_profit is not None and not df_profit.empty:
+                    # 取关键财务指标
+                    rename_map = {}
+                    if 'REPORT_DATE' in df_profit.columns:
+                        rename_map['REPORT_DATE'] = '报告期'
+                    if 'TOTAL_OPERATE_INCOME' in df_profit.columns:
+                        rename_map['TOTAL_OPERATE_INCOME'] = '营业总收入'
+                    if 'PARENT_NETPROFIT' in df_profit.columns:
+                        rename_map['PARENT_NETPROFIT'] = '净利润'
+                    if 'BASIC_EPS' in df_profit.columns:
+                        rename_map['BASIC_EPS'] = '每股收益'
+                    if 'WEIGHTAVG_ROE' in df_profit.columns:
+                        rename_map['WEIGHTAVG_ROE'] = '加权净资产收益率'
+                    df_profit = df_profit.rename(columns=rename_map)
+                    df_profit = df_profit.sort_values(
+                        by=[c for c in ['报告期', 'REPORT_DATE'] if c in df_profit.columns][0],
+                        ascending=False
+                    ) if '报告期' in df_profit.columns or 'REPORT_DATE' in df_profit.columns else df_profit
+                    df = df_profit
+                    source = 'em_profit'
+            except Exception as e:
+                print(f"东方财富利润表失败({code}): {e}")
+
+        if df is None or (hasattr(df, 'empty') and df.empty):
+            return jsonify({
+                'success': False,
+                'error': f'无法获取该股票的财务数据（代码: {code}），该接口仅支持A股',
+                'code': code,
+            }), 200
+
+        # 统一处理：按报告期倒序排列（最新的在前）
+        date_col = None
+        for col in ['报告期', 'REPORT_DATE']:
+            if col in df.columns:
+                date_col = col
+                break
+        if date_col:
+            df = df.sort_values(date_col, ascending=False)
 
         items = []
         for _, row in df.head(8).iterrows():  # 最近8期
-            item = {'report_date': str(row.get('报告期', ''))}
+            item = {'report_date': str(row.get(date_col, '')) if date_col else ''}
             for col in df.columns:
-                if col != '报告期':
+                if col != date_col:
                     val = row.get(col)
                     if val is not None and str(val) != 'nan':
                         item[col] = str(val)
@@ -189,7 +240,8 @@ def get_stock_financial():
         result = {
             'success': True,
             'code': code,
-            'columns': [c for c in df.columns if c != '报告期'],
+            'source': source,
+            'columns': [c for c in df.columns if c != date_col],
             'data': items,
         }
 
