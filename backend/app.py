@@ -501,17 +501,14 @@ def stock_recommend():
         if strategy == 'value':
             # 价值策略：低PE、低PB、大市值
             strategy_desc = "低估值高分红，适合稳健投资"
-            conditions = []
             if 'pe' in filtered_df.columns:
-                conditions.append(filtered_df['pe'] > 0)
-                conditions.append(filtered_df['pe'] < 20)
+                filtered_df = filtered_df[filtered_df['pe'] > 0]
+                filtered_df = filtered_df[filtered_df['pe'] < 20]
             if 'pb' in filtered_df.columns:
-                conditions.append(filtered_df['pb'] > 0)
-                conditions.append(filtered_df['pb'] < 3)
+                filtered_df = filtered_df[filtered_df['pb'] > 0]
+                filtered_df = filtered_df[filtered_df['pb'] < 3]
             if 'market_cap' in filtered_df.columns:
-                conditions.append(filtered_df['market_cap'] > 100)
-            if conditions:
-                filtered_df = filtered_df[pd.concat(conditions, axis=1).all(axis=1)]
+                filtered_df = filtered_df[filtered_df['market_cap'] > 100]
             # 按PE升序（越低越好）
             if 'pe' in filtered_df.columns:
                 filtered_df = filtered_df.sort_values('pe', ascending=True)
@@ -519,17 +516,14 @@ def stock_recommend():
         elif strategy == 'growth':
             # 成长策略：中等PE、高涨幅、中小市值
             strategy_desc = "高成长潜力，适合激进投资"
-            conditions = []
             if 'pe' in filtered_df.columns:
-                conditions.append(filtered_df['pe'] > 10)
-                conditions.append(filtered_df['pe'] < 80)
+                filtered_df = filtered_df[filtered_df['pe'] > 10]
+                filtered_df = filtered_df[filtered_df['pe'] < 80]
             if 'market_cap' in filtered_df.columns:
-                conditions.append(filtered_df['market_cap'] > 20)
-                conditions.append(filtered_df['market_cap'] < 500)
+                filtered_df = filtered_df[filtered_df['market_cap'] > 20]
+                filtered_df = filtered_df[filtered_df['market_cap'] < 500]
             if 'change_percent' in filtered_df.columns:
-                conditions.append(filtered_df['change_percent'] > -5)
-            if conditions:
-                filtered_df = filtered_df[pd.concat(conditions, axis=1).all(axis=1)]
+                filtered_df = filtered_df[filtered_df['change_percent'] > -5]
             # 按涨跌幅降序
             if 'change_percent' in filtered_df.columns:
                 filtered_df = filtered_df.sort_values('change_percent', ascending=False)
@@ -537,32 +531,26 @@ def stock_recommend():
         elif strategy == 'tech':
             # 技术突破策略：高换手、近期强势
             strategy_desc = "趋势跟踪，捕捉技术突破"
-            conditions = []
             if 'change_percent' in filtered_df.columns:
-                conditions.append(filtered_df['change_percent'] > 2)
+                filtered_df = filtered_df[filtered_df['change_percent'] > 2]
             if 'market_cap' in filtered_df.columns:
-                conditions.append(filtered_df['market_cap'] > 50)
-            if conditions:
-                filtered_df = filtered_df[pd.concat(conditions, axis=1).all(axis=1)]
+                filtered_df = filtered_df[filtered_df['market_cap'] > 50]
             # 按涨跌幅降序
             if 'change_percent' in filtered_df.columns:
                 filtered_df = filtered_df.sort_values('change_percent', ascending=False)
 
         else:  # comprehensive - 综合选股
             strategy_desc = "多维度综合评分，均衡配置"
-            conditions = []
             if 'pe' in filtered_df.columns:
-                conditions.append(filtered_df['pe'] > 5)
-                conditions.append(filtered_df['pe'] < 50)
+                filtered_df = filtered_df[filtered_df['pe'] > 5]
+                filtered_df = filtered_df[filtered_df['pe'] < 50]
             if 'pb' in filtered_df.columns:
-                conditions.append(filtered_df['pb'] > 0)
-                conditions.append(filtered_df['pb'] < 5)
+                filtered_df = filtered_df[filtered_df['pb'] > 0]
+                filtered_df = filtered_df[filtered_df['pb'] < 5]
             if 'market_cap' in filtered_df.columns:
-                conditions.append(filtered_df['market_cap'] > 50)
+                filtered_df = filtered_df[filtered_df['market_cap'] > 50]
             if 'change_percent' in filtered_df.columns:
-                conditions.append(filtered_df['change_percent'] > -3)
-            if conditions:
-                filtered_df = filtered_df[pd.concat(conditions, axis=1).all(axis=1)]
+                filtered_df = filtered_df[filtered_df['change_percent'] > -3]
             # 综合排序
             score_parts = []
             if 'pe' in filtered_df.columns:
