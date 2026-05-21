@@ -276,12 +276,7 @@ def get_stock_analysis():
 
 
 if __name__ == '__main__':
-    print("股票数据后端服务启动...")
-    print("端口: 5000")
-    print("接口:")
-    print("  GET /health - 健康检查")
-    print("  GET /api/announcements?date=20260521&keyword=平安 - 公告列表")
-    print("  GET /api/stock/news?code=601318 - 个股新闻")
-    print("  GET /api/stock/financial?code=601318 - 财务摘要")
-    print("  GET /api/stock/analysis?code=601318&name=中国平安 - 综合分析")
-    app.run(host='0.0.0.0', port=5000, debug=False)
+    import os
+    port = int(os.environ.get('PORT', 5000))
+    print(f"股票数据后端服务启动... 端口: {port}")
+    app.run(host='0.0.0.0', port=port, debug=False)
