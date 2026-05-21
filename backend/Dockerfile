@@ -18,5 +18,5 @@ COPY app.py .
 # 暴露端口
 EXPOSE 5000
 
-# 启动服务（使用 gunicorn 生产模式）
-CMD ["gunicorn", "--bind", "0.0.0.0:5000", "--workers", "2", "--timeout", "120", "app:app"]
+# 使用环境变量端口（Render 等平台会动态分配端口）
+CMD ["sh", "-c", "gunicorn --bind 0.0.0.0:${PORT:-5000} --workers 2 --timeout 120 app:app"]
