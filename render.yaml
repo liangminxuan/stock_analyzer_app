@@ -1,0 +1,19 @@
+# Render Blueprint 部署配置
+# 部署方式: Render Dashboard → Blueprints → New Blueprint Instance → 选择此仓库
+
+services:
+  - type: web
+    name: stock-backend
+    runtime: python
+    region: singapore
+    rootDir: backend
+    buildCommand: pip install -r requirements.txt
+    startCommand: gunicorn --bind 0.0.0.0:$PORT --workers 2 --timeout 120 app:app
+    healthCheckPath: /health
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.10.12
+      - key: PORT
+        value: 5000
+      - key: GUNICORN_CMD_ARGS
+        value: "--bind=0.0.0.0:$PORT"
