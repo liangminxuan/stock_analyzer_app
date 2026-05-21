@@ -530,7 +530,7 @@ class _StockDetailScreenState extends State<StockDetailScreen> {
           ),
           SizedBox(height: 12.h),
           _buildInfoRow('股票代码', '${stock.market}${stock.code}'),
-          _buildInfoRow('市盈率', stock.pe?.toStringAsFixed(2) ?? '-'),
+          _buildInfoRow('市盈率', stock.peRatio > 0 ? stock.peRatio.toStringAsFixed(2) : '-'),
           _buildInfoRow('总市值', stock.marketCapText),
         ],
       ),
