@@ -683,59 +683,15 @@ def get_announcement_detail():
         if not url:
             return jsonify({'success': False, 'error': '缺少URL参数'}), 400
 
-        # 尝试获取公告内容
-        content = ""
-        try:
-            import requests
-            from bs4 import BeautifulSoup
-            
-            headers = {
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
-            }
-            response = requests.get(url, headers=headers, timeout=10)
-            response.encoding = response.apparent_encoding
-            
-            soup = BeautifulSoup(response.text, 'html.parser')
-            
-            # 尝试提取正文内容
-            # 常见的公告内容容器
-            selectors = [
-                '.detail-content',
-                '.content',
-                '#content',
-                '.article-content',
-                '.main-content',
-                'article',
-            ]
-            
-            for selector in selectors:
-                elem = soup.select_one(selector)
-                if elem:
-                    content = elem.get_text(strip=True)
-                    break
-            
-            # 如果没找到，取body文本
-            if not content:
-                body = soup.find('body')
-                if body:
-                    content = body.get_text(strip=True)
-            
-            # 限制长度
-            content = content[:3000] if content else ""
-            
-        except Exception as e:
-            print(f"获取公告内容失败: {e}")
-            content = ""
-
-        # 生成深度解读
-        interpretation = generate_announcement_interpretation(title, content, stock_name)
+        # 基于标题生成深度解读（不获取原文，因为公告网站通常有反爬）
+        interpretation = generate_announcement_interpretation(title, "", stock_name)
 
         return jsonify({
             'success': True,
             'title': title,
             'stock_name': stock_name,
             'url': url,
-            'content_preview': content[:500] + "..." if len(content) > 500 else content,
+            'content_preview': '点击查看原文链接查看详细内容',
             'interpretation': interpretation,
         })
 
