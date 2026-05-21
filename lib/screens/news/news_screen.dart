@@ -820,7 +820,7 @@ class _StockAnnouncementSheetState extends State<_StockAnnouncementSheet> {
                   ),
                 ),
               ],
-            ),
+            ],
           ),
         );
       },
