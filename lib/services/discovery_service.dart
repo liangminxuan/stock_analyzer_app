@@ -11,6 +11,57 @@ class DiscoveryService {
 
   Dio get _dio => _backendService.dio;
 
+  /// 检查股票数据是否已加载，如果未加载则等待
+  /// 返回 true 表示数据已就绪，false 表示加载失败
+  Future<bool> waitForStockData({Duration timeout = const Duration(minutes: 3)}) async {
+    final deadline = DateTime.now().add(timeout);
+
+    while (DateTime.now().isBefore(deadline)) {
+      try {
+        final response = await _dio.get('/api/stock/data_status');
+        final data = response.data;
+
+        if (data['loaded'] == true) {
+          print('[DiscoveryService] 股票数据已就绪, ${data['row_count']} 行');
+          return true;
+        }
+
+        if (data['loading'] == true) {
+          final elapsed = data['loading_elapsed'] ?? 0;
+          print('[DiscoveryService] 数据加载中... 已耗时 ${elapsed}s');
+          // 等待3秒后重试
+          await Future.delayed(const Duration(seconds: 3));
+          continue;
+        }
+
+        // 既不在加载也没有数据，且有错误
+        if (data['load_error'] != null) {
+          print('[DiscoveryService] 数据加载失败: ${data['load_error']}');
+          return false;
+        }
+
+        // 未知状态，等待后重试
+        await Future.delayed(const Duration(seconds: 3));
+      } catch (e) {
+        print('[DiscoveryService] 检查数据状态失败: $e');
+        await Future.delayed(const Duration(seconds: 5));
+      }
+    }
+
+    print('[DiscoveryService] 等待数据超时');
+    return false;
+  }
+
+  /// 获取数据加载状态
+  Future<Map<String, dynamic>> getStockDataStatus() async {
+    try {
+      final response = await _dio.get('/api/stock/data_status');
+      return Map<String, dynamic>.from(response.data);
+    } catch (e) {
+      return {'loaded': false, 'loading': false, 'error': e.toString()};
+    }
+  }
+
   /// 股票筛选 - 根据条件筛选股票
   Future<Map<String, dynamic>> screenStocks({
     double? peMin,

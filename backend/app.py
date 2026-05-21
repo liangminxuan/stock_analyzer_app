@@ -35,58 +35,135 @@ def set_cached(key, data, timeout_seconds=300):
 
 
 # ========== 全局股票数据缓存 ==========
+import threading
+_stock_data_lock = threading.Lock()
 _stock_data_cache = {
     'df': None,
     'last_update': 0,
     'loading': False,
+    'load_error': None,
+    'load_start_time': 0,
 }
 
 def get_stock_data():
-    """获取A股实时数据（带缓存，缓存30分钟）"""
+    """获取A股实时数据（带缓存，缓存30分钟）
+    如果数据正在加载中，会等待加载完成（最多120秒）
+    """
     import time
     now = time.time()
-    
+
     # 缓存有效期内直接返回
-    if _stock_data_cache['df'] is not None and (now - _stock_data_cache['last_update']) < 1800:
-        return _stock_data_cache['df']
-    
-    # 避免并发重复加载
-    if _stock_data_cache['loading']:
-        return _stock_data_cache['df']
-    
-    _stock_data_cache['loading'] = True
+    with _stock_data_lock:
+        if _stock_data_cache['df'] is not None and (now - _stock_data_cache['last_update']) < 1800:
+            return _stock_data_cache['df']
+
+        # 如果正在加载，等待加载完成
+        if _stock_data_cache['loading']:
+            pass  # 释放锁后等待
+        else:
+            # 没有在加载，开始加载
+            _stock_data_cache['loading'] = True
+            _stock_data_cache['load_error'] = None
+            _stock_data_cache['load_start_time'] = now
+            # 在锁内启动加载线程
+            t = threading.Thread(target=_load_stock_data, daemon=True)
+            t.start()
+
+    # 等待加载完成
+    wait_start = time.time()
+    while _stock_data_cache['loading'] and (time.time() - wait_start) < 120:
+        time.sleep(1)
+
+    with _stock_data_lock:
+        if _stock_data_cache['df'] is not None:
+            return _stock_data_cache['df']
+        if _stock_data_cache['load_error']:
+            print(f"[get_stock_data] 加载失败: {_stock_data_cache['load_error']}")
+        return None
+
+
+def _load_stock_data():
+    """实际执行数据加载（在后台线程中运行）"""
+    import time
     try:
         print("[get_stock_data] 开始获取A股实时数据...")
+        start = time.time()
+
+        df = None
+        errors = []
+
+        # 尝试1: 东方财富接口
         try:
             df = ak.stock_zh_a_spot_em()
-            print(f"[get_stock_data] stock_zh_a_spot_em() 成功, {len(df)} 行")
+            print(f"[get_stock_data] stock_zh_a_spot_em() 成功, {len(df)} 行, 耗时 {time.time()-start:.1f}s")
         except Exception as e1:
-            print(f"[get_stock_data] 东方财富接口失败: {e1}, 尝试备用接口...")
+            errors.append(f"东方财富: {e1}")
+            print(f"[get_stock_data] 东方财富接口失败: {e1}")
+
+        # 尝试2: 备用接口
+        if df is None:
             try:
                 df = ak.stock_zh_a_spot()
-                print(f"[get_stock_data] stock_zh_a_spot() 成功, {len(df)} 行")
+                print(f"[get_stock_data] stock_zh_a_spot() 成功, {len(df)} 行, 耗时 {time.time()-start:.1f}s")
             except Exception as e2:
+                errors.append(f"备用: {e2}")
                 print(f"[get_stock_data] 备用接口也失败: {e2}")
-                _stock_data_cache['loading'] = False
-                return None
-        
-        _stock_data_cache['df'] = df
-        _stock_data_cache['last_update'] = now
-        return df
-    finally:
-        _stock_data_cache['loading'] = False
+
+        # 尝试3: 新浪实时行情接口（更轻量）
+        if df is None:
+            try:
+                import requests
+                # 获取沪深300成分股作为备选池
+                url = "https://money.finance.sina.com.cn/d/api/openapi_proxy.php/?__s=[[%22hq%22,%22hs_a%22,%22%22%2C%22%22%2C50%2C1]]"
+                resp = requests.get(url, timeout=15)
+                data = resp.json()
+                if data and data[0] and 'items' in data[0]:
+                    items = data[0]['items']
+                    rows = []
+                    for item in items:
+                        rows.append({
+                            '代码': item[0],
+                            '名称': item[1],
+                            '最新价': item[2],
+                            '涨跌幅': item[3],
+                            '市盈率-动态': item[4] if len(item) > 4 else None,
+                            '市净率': item[5] if len(item) > 5 else None,
+                            '总市值': item[6] if len(item) > 6 else None,
+                            '换手率': item[7] if len(item) > 7 else None,
+                        })
+                    df = pd.DataFrame(rows)
+                    print(f"[get_stock_data] 新浪接口成功, {len(df)} 行, 耗时 {time.time()-start:.1f}s")
+            except Exception as e3:
+                errors.append(f"新浪: {e3}")
+                print(f"[get_stock_data] 新浪接口也失败: {e3}")
+
+        with _stock_data_lock:
+            if df is not None and not df.empty:
+                _stock_data_cache['df'] = df
+                _stock_data_cache['last_update'] = time.time()
+                _stock_data_cache['load_error'] = None
+                print(f"[get_stock_data] 数据加载完成, {len(df)} 行")
+            else:
+                _stock_data_cache['load_error'] = "; ".join(errors)
+                print(f"[get_stock_data] 所有接口均失败: {errors}")
+            _stock_data_cache['loading'] = False
+
+    except Exception as e:
+        with _stock_data_lock:
+            _stock_data_cache['load_error'] = str(e)
+            _stock_data_cache['loading'] = False
+        print(f"[get_stock_data] 加载异常: {e}")
 
 
 def warmup_stock_data():
     """后台预热股票数据"""
-    import threading
-    def _load():
-        try:
-            get_stock_data()
-            print("[warmup] 股票数据预热完成")
-        except Exception as e:
-            print(f"[warmup] 预热失败: {e}")
-    t = threading.Thread(target=_load, daemon=True)
+    with _stock_data_lock:
+        if _stock_data_cache['loading'] or (_stock_data_cache['df'] is not None and (time.time() - _stock_data_cache['last_update']) < 1800):
+            return
+        _stock_data_cache['loading'] = True
+        _stock_data_cache['load_error'] = None
+        _stock_data_cache['load_start_time'] = time.time()
+    t = threading.Thread(target=_load_stock_data, daemon=True)
     t.start()
 
 
@@ -97,10 +174,83 @@ warmup_stock_data()
 @app.route('/health', methods=['GET'])
 def health():
     """健康检查（同时触发数据预热）"""
-    # 如果缓存为空，触发预热
     if _stock_data_cache['df'] is None and not _stock_data_cache['loading']:
         warmup_stock_data()
     return jsonify({'status': 'ok', 'time': datetime.now().isoformat()})
+
+
+@app.route('/api/stock/data_status', methods=['GET'])
+def stock_data_status():
+    """检查股票数据缓存状态"""
+    import time
+    with _stock_data_lock:
+        is_loaded = _stock_data_cache['df'] is not None
+        is_loading = _stock_data_cache['loading']
+        row_count = len(_stock_data_cache['df']) if is_loaded else 0
+        last_update = _stock_data_cache['last_update']
+        load_error = _stock_data_cache['load_error']
+        load_start = _stock_data_cache['load_start_time']
+        elapsed = time.time() - load_start if is_loading and load_start > 0 else 0
+
+    # 如果数据未加载且未在加载，触发预热
+    if not is_loaded and not is_loading:
+        warmup_stock_data()
+
+    return jsonify({
+        'success': True,
+        'loaded': is_loaded,
+        'loading': is_loading,
+        'row_count': row_count,
+        'last_update': last_update,
+        'load_error': load_error,
+        'loading_elapsed': round(elapsed, 1) if is_loading else 0,
+    })
+
+
+@app.route('/api/debug/test_akshare', methods=['GET'])
+def debug_test_akshare():
+    """测试 akshare 接口是否可用"""
+    import time
+    results = {}
+
+    # 测试东方财富接口
+    try:
+        start = time.time()
+        df = ak.stock_zh_a_spot_em()
+        elapsed = time.time() - start
+        results['stock_zh_a_spot_em'] = {
+            'success': True,
+            'rows': len(df),
+            'columns': df.columns.tolist(),
+            'elapsed': round(elapsed, 1),
+            'sample': df.head(2).to_dict('records') if not df.empty else [],
+        }
+    except Exception as e:
+        results['stock_zh_a_spot_em'] = {'success': False, 'error': str(e)}
+
+    # 测试备用接口
+    try:
+        start = time.time()
+        df = ak.stock_zh_a_spot()
+        elapsed = time.time() - start
+        results['stock_zh_a_spot'] = {
+            'success': True,
+            'rows': len(df),
+            'columns': df.columns.tolist(),
+            'elapsed': round(elapsed, 1),
+        }
+    except Exception as e:
+        results['stock_zh_a_spot'] = {'success': False, 'error': str(e)}
+
+    return jsonify({
+        'success': True,
+        'results': results,
+        'cache_status': {
+            'loaded': _stock_data_cache['df'] is not None,
+            'loading': _stock_data_cache['loading'],
+            'error': _stock_data_cache['load_error'],
+        },
+    })
 
 
 @app.route('/api/announcements', methods=['GET'])

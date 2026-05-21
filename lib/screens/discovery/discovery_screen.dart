@@ -16,6 +16,7 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
 
   bool _isLoading = false;
   String _selectedStrategy = 'comprehensive';
+  String _loadingMessage = ''; // 加载状态提示
 
   // 筛选条件
   double _peMin = 0;
@@ -137,7 +138,27 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
         // 股票列表
         Expanded(
           child: _isLoading
-              ? const Center(child: CircularProgressIndicator())
+              ? Center(
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      const CircularProgressIndicator(),
+                      SizedBox(height: 16.h),
+                      Text(
+                        _loadingMessage.isNotEmpty ? _loadingMessage : '加载中...',
+                        style: TextStyle(fontSize: 14.sp, color: Colors.grey[600]),
+                      ),
+                      if (_loadingMessage.contains('数据'))
+                        Padding(
+                          padding: EdgeInsets.only(top: 8.h),
+                          child: Text(
+                            '首次加载需要获取A股全量数据，请耐心等待',
+                            style: TextStyle(fontSize: 12.sp, color: Colors.grey[400]),
+                          ),
+                        ),
+                    ],
+                  ),
+                )
               : _screenResults.isEmpty
                   ? Center(
                       child: Column(
@@ -520,9 +541,37 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
     setState(() {
       _isLoading = true;
       _showResults = true;
+      _loadingMessage = '正在检查数据状态...';
     });
 
     try {
+      // 先等待股票数据加载就绪
+      final dataReady = await _discoveryService.waitForStockData(
+        timeout: const Duration(minutes: 3),
+      );
+
+      if (!dataReady) {
+        if (mounted) {
+          setState(() {
+            _isLoading = false;
+            _loadingMessage = '';
+            _screenResults = [];
+            _totalResults = 0;
+          });
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('股票数据加载失败，请稍后重试。首次使用需要加载A股全量数据，可能需要1-2分钟。'),
+              duration: Duration(seconds: 5),
+            ),
+          );
+        }
+        return;
+      }
+
+      setState(() {
+        _loadingMessage = '正在选股分析...';
+      });
+
       // 先尝试使用策略推荐API
       final result = await _discoveryService.recommendStocks(
         strategy: _selectedStrategy,
@@ -533,9 +582,14 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
         setState(() {
           _screenResults = List<Map<String, dynamic>>.from(result['data']);
           _totalResults = result['count'] ?? _screenResults.length;
+          _loadingMessage = '';
         });
       } else {
         // 如果推荐API没有结果，使用筛选API
+        setState(() {
+          _loadingMessage = '正在筛选股票...';
+        });
+
         final screenResult = await _discoveryService.screenStocks(
           peMin: _peMin > 0 ? _peMin : null,
           peMax: _peMax < 100 ? _peMax : null,
@@ -549,6 +603,7 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
         setState(() {
           _screenResults = List<Map<String, dynamic>>.from(screenResult['data'] ?? []);
           _totalResults = screenResult['total'] ?? _screenResults.length;
+          _loadingMessage = '';
         });
       }
     } catch (e) {
@@ -556,7 +611,13 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
       setState(() {
         _screenResults = [];
         _totalResults = 0;
+        _loadingMessage = '';
       });
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('选股失败: $e')),
+        );
+      }
     } finally {
       setState(() {
         _isLoading = false;
