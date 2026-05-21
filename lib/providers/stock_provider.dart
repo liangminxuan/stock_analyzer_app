@@ -185,7 +185,7 @@ class StockProvider extends ChangeNotifier {
     }
   }
 
-  /// 生成分析结果
+  /// 生成分析结果 - 白话化文案
   KLineAnalysis _generateAnalysis(List<KLineData> klines, String name) {
     if (klines.isEmpty) {
       return KLineAnalysis(
@@ -198,48 +198,135 @@ class StockProvider extends ChangeNotifier {
         patterns: [],
         riskWarnings: ['数据不足'],
         confidenceScore: 0,
+        analysisProcess: '暂无足够数据进行分析。',
       );
     }
 
     final lastPrice = klines.last.close;
+    final lastKline = klines.last;
     final prices = klines.map((k) => k.close).toList();
+    final volumes = klines.map((k) => k.volume).toList();
 
-    double calcMA(List<double> prices, int period) {
-      if (prices.length < period) return 0;
-      final slice = prices.sublist(prices.length - period);
-      return slice.reduce((a, b) => a + b) / period;
+    // 计算均线
+    double calcMA(List<double> p, int period) {
+      if (p.length < period) return 0;
+      return p.sublist(p.length - period).reduce((a, b) => a + b) / period;
     }
 
     final ma5 = calcMA(prices, 5);
     final ma10 = calcMA(prices, 10);
     final ma20 = calcMA(prices, 20);
 
-    String trend = '震荡';
+    // 判断趋势
+    String trend;
+    String trendReason;
     if (ma5 > ma20 && lastPrice > ma5) {
       trend = '上涨趋势';
+      trendReason = '5日均线（${ma5.toStringAsFixed(2)}）在20日均线（${ma20.toStringAsFixed(2)}）上方，且当前价格（${lastPrice.toStringAsFixed(2)}）也在5日均线上方，说明短期走势偏强。';
     } else if (ma5 < ma20 && lastPrice < ma5) {
       trend = '下跌趋势';
+      trendReason = '5日均线（${ma5.toStringAsFixed(2)}）在20日均线（${ma20.toStringAsFixed(2)}）下方，且当前价格（${lastPrice.toStringAsFixed(2)}）也在5日均线下方，说明短期走势偏弱。';
+    } else if (ma5 > ma10 && ma10 > ma20) {
+      trend = '多头排列';
+      trendReason = '5日、10日、20日均线依次从上到下排列（均线多头排列），这是比较健康的上涨信号。';
+    } else if (ma5 < ma10 && ma10 < ma20) {
+      trend = '空头排列';
+      trendReason = '5日、10日、20日均线依次从下到上排列（均线空头排列），说明市场整体偏弱。';
+    } else {
+      trend = '震荡整理';
+      trendReason = '均线交织在一起，没有明确的方向，说明市场正在选择方向。';
     }
 
-    final lows = klines.map((k) => k.low).toList();
-    final highs = klines.map((k) => k.high).toList();
-    final support = lows.reduce((a, b) => a < b ? a : b);
-    final resistance = highs.reduce((a, b) => a > b ? a : b);
+    // 支撑位和阻力位
+    final support = klines.map((k) => k.low).reduce((a, b) => a < b ? a : b);
+    final resistance = klines.map((k) => k.high).reduce((a, b) => a > b ? a : b);
 
+    // 涨跌幅
     final firstPrice = prices.first;
-    final change = lastPrice - firstPrice;
-    final changePercent = firstPrice != 0 ? (change / firstPrice) * 100 : 0;
+    final changePercent = firstPrice != 0 ? ((lastPrice - firstPrice) / firstPrice) * 100 : 0;
+
+    // 成交量分析
+    final avgVolume = volumes.length > 1 ? volumes.sublist(0, volumes.length - 1).reduce((a, b) => a + b) / (volumes.length - 1) : 0;
+    final lastVolume = lastKline.volume;
+    final volumeRatio = avgVolume > 0 ? lastVolume / avgVolume : 1.0;
+    String volumeDesc;
+    if (volumeRatio > 2) {
+      volumeDesc = '最近一天的成交量是近期平均的${volumeRatio.toStringAsFixed(1)}倍，明显放量，说明有大资金在操作。';
+    } else if (volumeRatio > 1.3) {
+      volumeDesc = '最近一天的成交量比近期平均水平略高（${volumeRatio.toStringAsFixed(1)}倍），属于温和放量。';
+    } else if (volumeRatio < 0.5) {
+      volumeDesc = '最近一天的成交量只有近期平均的${volumeRatio.toStringAsFixed(1)}倍，明显缩量，说明市场观望情绪浓厚。';
+    } else {
+      volumeDesc = '最近一天的成交量与近期平均水平基本持平（${volumeRatio.toStringAsFixed(1)}倍），属于正常水平。';
+    }
+
+    // 价格与均线关系
+    String priceMaDesc;
+    if (lastPrice > ma5 && lastPrice > ma10 && lastPrice > ma20) {
+      priceMaDesc = '当前价格在所有均线上方，属于强势状态。';
+    } else if (lastPrice < ma5 && lastPrice < ma10 && lastPrice < ma20) {
+      priceMaDesc = '当前价格在所有均线下方，属于弱势状态。';
+    } else {
+      priceMaDesc = '当前价格在均线之间穿插，多空双方在争夺。';
+    }
+
+    // 构建分析过程
+    final analysisProcess = [
+      '第一步：看均线排列',
+      'MA5（5日均线）= ${ma5.toStringAsFixed(2)}：代表最近5天的平均成交价，反映短期走势。',
+      'MA10（10日均线）= ${ma10.toStringAsFixed(2)}：代表最近10天的平均成交价，反映中期走势。',
+      'MA20（20日均线）= ${ma20.toStringAsFixed(2)}：代表最近20天的平均成交价，反映中长期走势。',
+      '$trendReason',
+      '',
+      '第二步：看价格位置',
+      '$priceMaDesc',
+      '',
+      '第三步：看成交量',
+      volumeDesc,
+      '',
+      '第四步：看近期涨跌',
+      '近${klines.length}个交易日，$name ${changePercent >= 0 ? "累计上涨" : "累计下跌"} ${changePercent.abs().toStringAsFixed(2)}%。',
+      '近期最低点：${support.toStringAsFixed(2)}，最高点：${resistance.toStringAsFixed(2)}。',
+    ].join('\n');
+
+    // 技术指标白话解读
+    final technicalSummary = [
+      '【MA5 = ${ma5.toStringAsFixed(2)}】',
+      lastPrice > ma5 ? '当前价格在MA5上方，短期趋势偏多。如果MA5向上拐头，说明短期可能继续上涨。' : '当前价格在MA5下方，短期趋势偏空。如果MA5向下拐头，说明短期可能继续下跌。',
+      '',
+      '【MA10 = ${ma10.toStringAsFixed(2)}】',
+      lastPrice > ma10 ? '价格在MA10上方，中期走势尚可。MA10是很多散户关注的重要均线，守住MA10说明中期趋势没坏。' : '价格跌破MA10，中期走势转弱。很多投资者会在跌破MA10时减仓。',
+      '',
+      '【MA20 = ${ma20.toStringAsFixed(2)}】',
+      lastPrice > ma20 ? '价格在MA20上方，中长期趋势仍然健康。MA20通常被视为"生命线"，站稳上方说明大趋势没变。' : '价格跌破MA20，需要警惕。MA20是重要的趋势分界线，跌破后可能进入调整期。',
+    ].join('\n');
+
+    // 形态识别
+    final patterns = _detectPatterns(klines);
+
+    // 风险提示
+    final warnings = _generateWarnings(klines, volumeRatio);
+
+    // 交易建议
+    final tradingAdvice = _generateAdvice(trend, ma5, ma10, ma20, lastPrice, support, resistance, changePercent);
+
+    // 趋势描述
+    final trendDescription = '$name 目前处于【$trend】。\n\n'
+        '近${klines.length}个交易日${changePercent >= 0 ? "累计上涨" : "累计下跌"} '
+        '${changePercent.abs().toStringAsFixed(2)}%，'
+        '当前价格 ${lastPrice.toStringAsFixed(2)} 元。';
 
     return KLineAnalysis(
-        trend: trend,
-        trendDescription: '$name 当前处于 $trend，近60日涨跌 ${changePercent.toStringAsFixed(2)}%',
-      technicalSummary: 'MA5=${ma5.toStringAsFixed(2)} | MA10=${ma10.toStringAsFixed(2)} | MA20=${ma20.toStringAsFixed(2)}',
-      tradingAdvice: _generateAdvice(trend, ma5, ma10, lastPrice),
+      trend: trend,
+      trendDescription: trendDescription,
+      technicalSummary: technicalSummary,
+      tradingAdvice: tradingAdvice,
       supportLevel: support,
       resistanceLevel: resistance,
-      patterns: _detectPatterns(klines),
-      riskWarnings: _generateWarnings(klines),
+      patterns: patterns,
+      riskWarnings: warnings,
       confidenceScore: 65,
+      analysisProcess: analysisProcess,
     );
   }
 
@@ -247,43 +334,73 @@ class StockProvider extends ChangeNotifier {
     final patterns = <String>[];
     if (klines.length < 5) return patterns;
 
+    // 检测近期新高
     final recentHighs = klines.sublist(klines.length - 5).map((k) => k.high);
     if (klines.last.high >= recentHighs.reduce((a, b) => a > b ? a : b)) {
-      patterns.add('近期创新高');
+      patterns.add('近期创出新高，说明买盘力量较强，但也要注意追高风险。');
     }
 
+    // 检测近期新低
+    final recentLows = klines.sublist(klines.length - 5).map((k) => k.low);
+    if (klines.last.low <= recentLows.reduce((a, b) => a < b ? a : b)) {
+      patterns.add('近期创出新低，说明卖盘压力较大，短期可能继续探底。');
+    }
+
+    // 连续上涨/下跌
     int upDays = 0;
     for (int i = klines.length - 1; i > 0 && klines[i].close > klines[i-1].close; i--) {
       upDays++;
     }
     if (upDays >= 3) {
-      patterns.add('连续上涨$upDays天');
+      patterns.add('连续上涨${upDays}天，短期获利盘较多，注意回调风险。');
+    }
+
+    int downDays = 0;
+    for (int i = klines.length - 1; i > 0 && klines[i].close < klines[i-1].close; i--) {
+      downDays++;
+    }
+    if (downDays >= 3) {
+      patterns.add('连续下跌${downDays}天，短期超跌，可能有技术性反弹。');
     }
 
     return patterns;
   }
 
-  List<String> _generateWarnings(List<KLineData> klines) {
+  List<String> _generateWarnings(List<KLineData> klines, double volumeRatio) {
     final warnings = <String>[];
-    if (klines.length >= 20) {
-      final avgVolume = klines.sublist(0, klines.length - 1)
-          .map((k) => k.volume)
-          .reduce((a, b) => a + b) / (klines.length - 1);
-      final lastVolume = klines.last.volume;
-      if (lastVolume > avgVolume * 2) {
-        warnings.add('成交量异常放大，请注意风险');
+    if (volumeRatio > 2) {
+      warnings.add('成交量异常放大（${volumeRatio.toStringAsFixed(1)}倍均量），可能是主力资金进出，需密切关注后续走势。');
+    }
+    if (klines.length >= 5) {
+      final last5 = klines.sublist(klines.length - 5);
+      final avgRange = last5.map((k) => k.high - k.low).reduce((a, b) => a + b) / 5;
+      final lastRange = klines.last.high - klines.last.low;
+      if (lastRange > avgRange * 2) {
+        warnings.add('最近一天振幅明显放大，市场波动加剧，注意控制风险。');
       }
     }
     return warnings;
   }
 
-  String _generateAdvice(String trend, double ma5, double ma10, double price) {
-    if (trend == '上涨趋势') {
-      return '技术面显示上涨趋势，可考虑回调买入，注意设置止损位';
-    } else if (trend == '下跌趋势') {
-      return '技术面显示下跌趋势，建议观望或对冲风险';
+  String _generateAdvice(String trend, double ma5, double ma10, double ma20, double price, double support, double resistance, double changePercent) {
+    if (trend.contains('上涨') || trend.contains('多头')) {
+      return '目前走势偏强，操作建议：\n\n'
+          '1. 如果还没持仓，可以等价格回调到MA5（${ma5.toStringAsFixed(2)}）附近再考虑买入，不要追高。\n'
+          '2. 如果已经持仓，可以继续持有，但要把止损位设在MA10（${ma10.toStringAsFixed(2)}）下方。\n'
+          '3. 近期支撑位在 ${support.toStringAsFixed(2)}，阻力位在 ${resistance.toStringAsFixed(2)}。\n'
+          '4. 如果放量突破阻力位，可以考虑加仓。';
+    } else if (trend.contains('下跌') || trend.contains('空头')) {
+      return '目前走势偏弱，操作建议：\n\n'
+          '1. 如果还没持仓，建议继续观望，不要轻易抄底。\n'
+          '2. 如果已经持仓，建议减仓或设置止损，止损位可以设在 ${support.toStringAsFixed(2)} 下方。\n'
+          '3. 等待均线重新多头排列（MA5 > MA10 > MA20）再考虑入场。\n'
+          '4. 如果价格跌破 ${support.toStringAsFixed(2)}，可能还会继续下跌，需要果断止损。';
     }
-    return '目前处于震荡区间，建议高抛低吸，控制仓位';
+    return '目前市场方向不明，操作建议：\n\n'
+        '1. 震荡行情适合高抛低吸，可以在支撑位 ${support.toStringAsFixed(2)} 附近买入，阻力位 ${resistance.toStringAsFixed(2)} 附近卖出。\n'
+        '2. 控制仓位，不要满仓操作，保留资金应对方向选择。\n'
+        '3. 关注成交量变化，如果放量突破阻力位，说明选择向上，可以追入。\n'
+        '4. 如果放量跌破支撑位，说明选择向下，需要及时止损。';
   }
 
   /// 刷新数据 - 传纯代码

@@ -180,6 +180,7 @@ class KLineAnalysis {
   final String tradingAdvice;            // 交易建议
   final int confidenceScore;             // 信心评分 (0-100)
   final List<String> riskWarnings;       // 风险提示
+  final String analysisProcess;          // 分析过程
 
   const KLineAnalysis({
     required this.trend,
@@ -191,6 +192,7 @@ class KLineAnalysis {
     required this.tradingAdvice,
     required this.confidenceScore,
     required this.riskWarnings,
+    this.analysisProcess = '',
   });
 
   factory KLineAnalysis.fromJson(Map<String, dynamic> json) {
