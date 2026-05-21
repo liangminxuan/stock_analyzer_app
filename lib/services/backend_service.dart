@@ -127,4 +127,28 @@ class BackendService {
     final date = '${now.year}${now.month.toString().padLeft(2, '0')}${now.day.toString().padLeft(2, '0')}';
     return getAnnouncements(date: date, keyword: keyword);
   }
+
+  /// 获取公告详情并解读
+  Future<Map<String, dynamic>?> getAnnouncementDetail({
+    required String url,
+    required String title,
+    required String stockName,
+  }) async {
+    try {
+      final response = await dio.get('/api/announcement/detail', queryParameters: {
+        'url': url,
+        'title': title,
+        'stock_name': stockName,
+      });
+      final data = response.data;
+
+      if (data['success'] == true) {
+        return Map<String, dynamic>.from(data);
+      }
+      return null;
+    } catch (e) {
+      print('[BackendService] 获取公告详情失败: $e');
+      return null;
+    }
+  }
 }

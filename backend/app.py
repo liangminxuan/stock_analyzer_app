@@ -278,6 +278,31 @@ def get_stock_analysis():
 
 # ==================== 智能选股 API ====================
 
+def normalize_stock_data(df):
+    """统一不同数据源的股票数据列名"""
+    # 东方财富接口的列名映射
+    em_mapping = {
+        '代码': 'code',
+        '名称': 'name',
+        '最新价': 'price',
+        '涨跌幅': 'change_percent',
+        '市盈率-动态': 'pe',
+        '市净率': 'pb',
+        '总市值': 'market_cap',
+        '换手率': 'turnover',
+        '所属行业': 'industry',
+        'ROE': 'roe',
+    }
+    
+    # 如果列名已经是英文，直接返回
+    if 'code' in df.columns or '名称' not in df.columns:
+        return df
+    
+    # 重命名列
+    df = df.rename(columns=em_mapping)
+    return df
+
+
 @app.route('/api/stock/screen', methods=['GET'])
 def stock_screen():
     """
@@ -315,60 +340,57 @@ def stock_screen():
         # 获取A股实时行情数据
         try:
             df = ak.stock_zh_a_spot_em()
-        except:
-            # 备用接口
-            df = ak.stock_zh_a_spot()
+        except Exception as e1:
+            print(f"东方财富接口失败: {e1}")
+            try:
+                df = ak.stock_zh_a_spot()
+            except Exception as e2:
+                print(f"备用接口也失败: {e2}")
+                return jsonify({'success': False, 'error': '无法获取股票数据', 'data': []}), 500
 
-        # 重命名列以便统一处理
-        column_mapping = {
-            '代码': 'code',
-            '名称': 'name',
-            '最新价': 'price',
-            '涨跌幅': 'change_percent',
-            '市盈率-动态': 'pe',
-            '市净率': 'pb',
-            '总市值': 'market_cap',
-            '换手率': 'turnover',
-            '所属行业': 'industry',
-            'ROE': 'roe',
-        }
-        df = df.rename(columns=column_mapping)
+        # 标准化列名
+        df = normalize_stock_data(df)
+        
+        # 检查必需的列
+        required_cols = ['code', 'name']
+        for col in required_cols:
+            if col not in df.columns:
+                return jsonify({'success': False, 'error': f'缺少必需列: {col}', 'columns': df.columns.tolist()}), 500
 
         # 数据清洗和转换
-        if 'pe' in df.columns:
-            df['pe'] = pd.to_numeric(df['pe'], errors='coerce')
-        if 'pb' in df.columns:
-            df['pb'] = pd.to_numeric(df['pb'], errors='coerce')
+        numeric_cols = ['price', 'change_percent', 'pe', 'pb', 'market_cap', 'turnover', 'roe']
+        for col in numeric_cols:
+            if col in df.columns:
+                df[col] = pd.to_numeric(df[col], errors='coerce')
+
         if 'market_cap' in df.columns:
-            df['market_cap'] = pd.to_numeric(df['market_cap'], errors='coerce') / 100000000  # 转为亿
-        if 'turnover' in df.columns:
-            df['turnover'] = pd.to_numeric(df['turnover'], errors='coerce')
-        if 'roe' in df.columns:
-            df['roe'] = pd.to_numeric(df['roe'], errors='coerce')
+            df['market_cap'] = df['market_cap'] / 100000000  # 转为亿
 
         # 应用筛选条件
-        if pe_min is not None:
+        if pe_min is not None and 'pe' in df.columns:
             df = df[df['pe'] >= pe_min]
-        if pe_max is not None:
+        if pe_max is not None and 'pe' in df.columns:
             df = df[df['pe'] <= pe_max]
-        if pb_min is not None:
+        if pb_min is not None and 'pb' in df.columns:
             df = df[df['pb'] >= pb_min]
-        if pb_max is not None:
+        if pb_max is not None and 'pb' in df.columns:
             df = df[df['pb'] <= pb_max]
         if roe_min is not None and 'roe' in df.columns:
             df = df[df['roe'] >= roe_min]
-        if market_cap_min is not None:
+        if market_cap_min is not None and 'market_cap' in df.columns:
             df = df[df['market_cap'] >= market_cap_min]
-        if market_cap_max is not None:
+        if market_cap_max is not None and 'market_cap' in df.columns:
             df = df[df['market_cap'] <= market_cap_max]
-        if turnover_min is not None:
+        if turnover_min is not None and 'turnover' in df.columns:
             df = df[df['turnover'] >= turnover_min]
         if industry and 'industry' in df.columns:
             df = df[df['industry'].str.contains(industry, na=False)]
 
         # 排除异常值
-        df = df[df['pe'] > 0]  # 排除负PE
-        df = df[df['pb'] > 0]  # 排除负PB
+        if 'pe' in df.columns:
+            df = df[df['pe'] > 0]  # 排除负PE
+        if 'pb' in df.columns:
+            df = df[df['pb'] > 0]  # 排除负PB
 
         # 排序（按涨跌幅降序）
         if 'change_percent' in df.columns:
@@ -388,11 +410,15 @@ def stock_screen():
                 'name': str(row.get('name', '')),
                 'price': float(row.get('price', 0)) if pd.notna(row.get('price')) else 0,
                 'change_percent': float(row.get('change_percent', 0)) if pd.notna(row.get('change_percent')) else 0,
-                'pe': float(row.get('pe', 0)) if pd.notna(row.get('pe')) else None,
-                'pb': float(row.get('pb', 0)) if pd.notna(row.get('pb')) else None,
-                'market_cap': float(row.get('market_cap', 0)) if pd.notna(row.get('market_cap')) else None,
-                'turnover': float(row.get('turnover', 0)) if pd.notna(row.get('turnover')) else None,
             }
+            if 'pe' in df.columns:
+                item['pe'] = float(row.get('pe', 0)) if pd.notna(row.get('pe')) else None
+            if 'pb' in df.columns:
+                item['pb'] = float(row.get('pb', 0)) if pd.notna(row.get('pb')) else None
+            if 'market_cap' in df.columns:
+                item['market_cap'] = float(row.get('market_cap', 0)) if pd.notna(row.get('market_cap')) else None
+            if 'turnover' in df.columns:
+                item['turnover'] = float(row.get('turnover', 0)) if pd.notna(row.get('turnover')) else None
             if 'industry' in df.columns:
                 item['industry'] = str(row.get('industry', ''))
             if 'roe' in df.columns:
@@ -444,27 +470,24 @@ def stock_recommend():
         # 获取A股实时数据
         try:
             df = ak.stock_zh_a_spot_em()
-        except:
-            df = ak.stock_zh_a_spot()
+        except Exception as e1:
+            print(f"东方财富接口失败: {e1}")
+            try:
+                df = ak.stock_zh_a_spot()
+            except Exception as e2:
+                print(f"备用接口也失败: {e2}")
+                return jsonify({'success': False, 'error': '无法获取股票数据', 'data': []}), 500
 
-        # 统一列名
-        column_mapping = {
-            '代码': 'code',
-            '名称': 'name',
-            '最新价': 'price',
-            '涨跌幅': 'change_percent',
-            '市盈率-动态': 'pe',
-            '市净率': 'pb',
-            '总市值': 'market_cap',
-            '换手率': 'turnover',
-            '所属行业': 'industry',
-            'ROE': 'roe',
-            '净利润': 'net_profit',
-        }
-        df = df.rename(columns=column_mapping)
+        # 标准化列名
+        df = normalize_stock_data(df)
+        
+        # 检查必需的列
+        if 'code' not in df.columns or 'name' not in df.columns:
+            return jsonify({'success': False, 'error': '缺少必需列', 'columns': df.columns.tolist()}), 500
 
         # 数据清洗
-        for col in ['pe', 'pb', 'market_cap', 'turnover', 'roe', 'change_percent']:
+        numeric_cols = ['price', 'change_percent', 'pe', 'pb', 'market_cap', 'turnover', 'roe']
+        for col in numeric_cols:
             if col in df.columns:
                 df[col] = pd.to_numeric(df[col], errors='coerce')
 
@@ -476,59 +499,81 @@ def stock_recommend():
         strategy_desc = ""
 
         if strategy == 'value':
-            # 价值策略：低PE、低PB、高ROE、大市值
+            # 价值策略：低PE、低PB、大市值
             strategy_desc = "低估值高分红，适合稳健投资"
-            filtered_df = filtered_df[
-                (filtered_df['pe'] > 0) & (filtered_df['pe'] < 20) &
-                (filtered_df['pb'] > 0) & (filtered_df['pb'] < 3) &
-                (filtered_df['market_cap'] > 100)
-            ]
-            if 'roe' in filtered_df.columns:
-                filtered_df = filtered_df[filtered_df['roe'] > 8]
+            conditions = []
+            if 'pe' in filtered_df.columns:
+                conditions.append(filtered_df['pe'] > 0)
+                conditions.append(filtered_df['pe'] < 20)
+            if 'pb' in filtered_df.columns:
+                conditions.append(filtered_df['pb'] > 0)
+                conditions.append(filtered_df['pb'] < 3)
+            if 'market_cap' in filtered_df.columns:
+                conditions.append(filtered_df['market_cap'] > 100)
+            if conditions:
+                filtered_df = filtered_df[pd.concat(conditions, axis=1).all(axis=1)]
             # 按PE升序（越低越好）
-            filtered_df = filtered_df.sort_values('pe', ascending=True)
+            if 'pe' in filtered_df.columns:
+                filtered_df = filtered_df.sort_values('pe', ascending=True)
 
         elif strategy == 'growth':
-            # 成长策略：中等PE、高涨幅、高换手、中小市值
+            # 成长策略：中等PE、高涨幅、中小市值
             strategy_desc = "高成长潜力，适合激进投资"
-            filtered_df = filtered_df[
-                (filtered_df['pe'] > 10) & (filtered_df['pe'] < 80) &
-                (filtered_df['market_cap'] > 20) & (filtered_df['market_cap'] < 500) &
-                (filtered_df['change_percent'] > -5)
-            ]
-            if 'turnover' in filtered_df.columns:
-                filtered_df = filtered_df[filtered_df['turnover'] > 2]
+            conditions = []
+            if 'pe' in filtered_df.columns:
+                conditions.append(filtered_df['pe'] > 10)
+                conditions.append(filtered_df['pe'] < 80)
+            if 'market_cap' in filtered_df.columns:
+                conditions.append(filtered_df['market_cap'] > 20)
+                conditions.append(filtered_df['market_cap'] < 500)
+            if 'change_percent' in filtered_df.columns:
+                conditions.append(filtered_df['change_percent'] > -5)
+            if conditions:
+                filtered_df = filtered_df[pd.concat(conditions, axis=1).all(axis=1)]
             # 按涨跌幅降序
-            filtered_df = filtered_df.sort_values('change_percent', ascending=False)
+            if 'change_percent' in filtered_df.columns:
+                filtered_df = filtered_df.sort_values('change_percent', ascending=False)
 
         elif strategy == 'tech':
-            # 技术突破策略：高换手、近期强势、量价配合
+            # 技术突破策略：高换手、近期强势
             strategy_desc = "趋势跟踪，捕捉技术突破"
-            filtered_df = filtered_df[
-                (filtered_df['change_percent'] > 2) &
-                (filtered_df['market_cap'] > 50)
-            ]
-            if 'turnover' in filtered_df.columns:
-                filtered_df = filtered_df[filtered_df['turnover'] > 5]
+            conditions = []
+            if 'change_percent' in filtered_df.columns:
+                conditions.append(filtered_df['change_percent'] > 2)
+            if 'market_cap' in filtered_df.columns:
+                conditions.append(filtered_df['market_cap'] > 50)
+            if conditions:
+                filtered_df = filtered_df[pd.concat(conditions, axis=1).all(axis=1)]
             # 按涨跌幅降序
-            filtered_df = filtered_df.sort_values('change_percent', ascending=False)
+            if 'change_percent' in filtered_df.columns:
+                filtered_df = filtered_df.sort_values('change_percent', ascending=False)
 
         else:  # comprehensive - 综合选股
             strategy_desc = "多维度综合评分，均衡配置"
-            # 综合评分：PE适中(20-40)、PB适中、市值适中、有涨幅
-            filtered_df = filtered_df[
-                (filtered_df['pe'] > 5) & (filtered_df['pe'] < 50) &
-                (filtered_df['pb'] > 0) & (filtered_df['pb'] < 5) &
-                (filtered_df['market_cap'] > 50) &
-                (filtered_df['change_percent'] > -3)
-            ]
-            # 综合排序：市值适中 + 涨幅适中
-            filtered_df['score'] = (
-                (100 - filtered_df['pe'].clip(0, 100)) * 0.3 +  # PE越低越好
-                (10 - filtered_df['pb'].clip(0, 10)) * 10 * 0.3 +  # PB越低越好
-                filtered_df['change_percent'].clip(-10, 10) * 2 * 0.4  # 涨幅适中偏好
-            )
-            filtered_df = filtered_df.sort_values('score', ascending=False)
+            conditions = []
+            if 'pe' in filtered_df.columns:
+                conditions.append(filtered_df['pe'] > 5)
+                conditions.append(filtered_df['pe'] < 50)
+            if 'pb' in filtered_df.columns:
+                conditions.append(filtered_df['pb'] > 0)
+                conditions.append(filtered_df['pb'] < 5)
+            if 'market_cap' in filtered_df.columns:
+                conditions.append(filtered_df['market_cap'] > 50)
+            if 'change_percent' in filtered_df.columns:
+                conditions.append(filtered_df['change_percent'] > -3)
+            if conditions:
+                filtered_df = filtered_df[pd.concat(conditions, axis=1).all(axis=1)]
+            # 综合排序
+            score_parts = []
+            if 'pe' in filtered_df.columns:
+                score_parts.append((100 - filtered_df['pe'].clip(0, 100)) * 0.3)
+            if 'pb' in filtered_df.columns:
+                score_parts.append((10 - filtered_df['pb'].clip(0, 10)) * 10 * 0.3)
+            if 'change_percent' in filtered_df.columns:
+                score_parts.append(filtered_df['change_percent'].clip(-10, 10) * 2 * 0.4)
+            if score_parts:
+                filtered_df['score'] = sum(score_parts)
+                filtered_df = filtered_df.sort_values('score', ascending=False)
 
         # 取前N个
         result_df = filtered_df.head(count)
@@ -541,27 +586,31 @@ def stock_recommend():
                 'name': str(row.get('name', '')),
                 'price': float(row.get('price', 0)) if pd.notna(row.get('price')) else 0,
                 'change_percent': float(row.get('change_percent', 0)) if pd.notna(row.get('change_percent')) else 0,
-                'pe': float(row.get('pe', 0)) if pd.notna(row.get('pe')) else None,
-                'pb': float(row.get('pb', 0)) if pd.notna(row.get('pb')) else None,
-                'market_cap': float(row.get('market_cap', 0)) if pd.notna(row.get('market_cap')) else None,
-                'turnover': float(row.get('turnover', 0)) if pd.notna(row.get('turnover')) else None,
             }
+            if 'pe' in df.columns:
+                item['pe'] = float(row.get('pe', 0)) if pd.notna(row.get('pe')) else None
+            if 'pb' in df.columns:
+                item['pb'] = float(row.get('pb', 0)) if pd.notna(row.get('pb')) else None
+            if 'market_cap' in df.columns:
+                item['market_cap'] = float(row.get('market_cap', 0)) if pd.notna(row.get('market_cap')) else None
+            if 'turnover' in df.columns:
+                item['turnover'] = float(row.get('turnover', 0)) if pd.notna(row.get('turnover')) else None
             if 'industry' in df.columns:
                 item['industry'] = str(row.get('industry', ''))
 
             # 生成推荐理由
             reasons = []
-            if item['pe'] and item['pe'] < 20:
+            if item.get('pe') and item['pe'] < 20:
                 reasons.append("估值偏低")
-            if item['pb'] and item['pb'] < 2:
+            if item.get('pb') and item['pb'] < 2:
                 reasons.append("市净率合理")
-            if item['change_percent'] and item['change_percent'] > 5:
+            if item.get('change_percent') and item['change_percent'] > 5:
                 reasons.append("近期强势")
-            if item['turnover'] and item['turnover'] > 5:
+            if item.get('turnover') and item['turnover'] > 5:
                 reasons.append("成交活跃")
-            if item['market_cap'] and item['market_cap'] > 500:
+            if item.get('market_cap') and item['market_cap'] > 500:
                 reasons.append("大盘蓝筹")
-            elif item['market_cap'] and item['market_cap'] < 100:
+            elif item.get('market_cap') and item['market_cap'] < 100:
                 reasons.append("中小盘成长")
 
             item['reason'] = "、".join(reasons) if reasons else "符合选股条件"
@@ -619,6 +668,170 @@ def get_industries():
     except Exception as e:
         traceback.print_exc()
         return jsonify({'success': False, 'error': str(e)}), 500
+
+
+# ==================== 公告原文解读 API ====================
+
+@app.route('/api/announcement/detail', methods=['GET'])
+def get_announcement_detail():
+    """
+    获取公告详情并解读
+    参数:
+      - url: 公告原文URL
+      - title: 公告标题
+      - stock_name: 股票名称
+    """
+    try:
+        url = request.args.get('url', '')
+        title = request.args.get('title', '')
+        stock_name = request.args.get('stock_name', '')
+
+        if not url:
+            return jsonify({'success': False, 'error': '缺少URL参数'}), 400
+
+        # 尝试获取公告内容
+        content = ""
+        try:
+            import requests
+            from bs4 import BeautifulSoup
+            
+            headers = {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+            }
+            response = requests.get(url, headers=headers, timeout=10)
+            response.encoding = response.apparent_encoding
+            
+            soup = BeautifulSoup(response.text, 'html.parser')
+            
+            # 尝试提取正文内容
+            # 常见的公告内容容器
+            selectors = [
+                '.detail-content',
+                '.content',
+                '#content',
+                '.article-content',
+                '.main-content',
+                'article',
+            ]
+            
+            for selector in selectors:
+                elem = soup.select_one(selector)
+                if elem:
+                    content = elem.get_text(strip=True)
+                    break
+            
+            # 如果没找到，取body文本
+            if not content:
+                body = soup.find('body')
+                if body:
+                    content = body.get_text(strip=True)
+            
+            # 限制长度
+            content = content[:3000] if content else ""
+            
+        except Exception as e:
+            print(f"获取公告内容失败: {e}")
+            content = ""
+
+        # 生成深度解读
+        interpretation = generate_announcement_interpretation(title, content, stock_name)
+
+        return jsonify({
+            'success': True,
+            'title': title,
+            'stock_name': stock_name,
+            'url': url,
+            'content_preview': content[:500] + "..." if len(content) > 500 else content,
+            'interpretation': interpretation,
+        })
+
+    except Exception as e:
+        traceback.print_exc()
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+def generate_announcement_interpretation(title, content, stock_name):
+    """生成公告深度解读"""
+    title_lower = title.lower()
+    
+    # 基于标题和内容的解读
+    interpretation = {
+        'summary': '',
+        'key_points': [],
+        'impact': '',
+        'suggestion': ''
+    }
+    
+    if '分红' in title or '利润分配' in title or '派息' in title:
+        interpretation['summary'] = f'{stock_name}宣布分红派息，这是公司盈利后向股东返还现金的方式。'
+        interpretation['key_points'] = [
+            '分红金额：查看每股分红金额',
+            '除权除息日：确定何时能收到分红',
+            '分红比例：分红金额占净利润的比例'
+        ]
+        interpretation['impact'] = '通常被视为积极信号，表明公司现金流健康。'
+        interpretation['suggestion'] = '关注分红收益率（分红金额/股价），高于3%算是不错的收益。'
+        
+    elif '增持' in title or '回购' in title:
+        interpretation['summary'] = f'公司大股东或管理层正在增持{stock_name}股票。'
+        interpretation['key_points'] = [
+            '增持主体：是谁在增持（大股东/高管/员工持股计划）',
+            '增持金额：增持了多少钱',
+            '增持价格：增持的价格区间'
+        ]
+        interpretation['impact'] = '内部人士增持通常被视为对公司未来有信心的信号。'
+        interpretation['suggestion'] = '关注增持金额是否足够大（至少千万元级别才有参考意义）。'
+        
+    elif '减持' in title:
+        interpretation['summary'] = f'公司股东正在减持{stock_name}股票。'
+        interpretation['key_points'] = [
+            '减持主体：是谁在减持',
+            '减持比例：减持了多少股份',
+            '减持原因：是资金需求还是对公司前景不看好'
+        ]
+        interpretation['impact'] = '减持可能被市场解读为负面信号，但要看具体情况。'
+        interpretation['suggestion'] = '如果减持比例超过1%需要警惕；如果是小比例减持（<0.5%）且是财务投资者，影响有限。'
+        
+    elif '业绩' in title or '预告' in title:
+        interpretation['summary'] = f'{stock_name}发布了业绩预告，透露了公司经营状况。'
+        interpretation['key_points'] = [
+            '同比变化：和去年同期相比增长还是下滑',
+            '环比变化：和上一季度相比的变化',
+            '业绩原因：增长或下滑的具体原因'
+        ]
+        interpretation['impact'] = '业绩是股价的重要驱动力，超预期的业绩通常会推动股价上涨。'
+        interpretation['suggestion'] = '不仅要看绝对数值，更要看增长趋势和是否达到市场预期。'
+        
+    elif '合同' in title or '中标' in title:
+        interpretation['summary'] = f'{stock_name}获得了新的业务合同或中标项目。'
+        interpretation['key_points'] = [
+            '合同金额：合同总金额有多大',
+            '合同期限：合同执行周期',
+            '收入确认：何时能确认收入'
+        ]
+        interpretation['impact'] = '新订单意味着未来收入有保障，对股价是积极信号。'
+        interpretation['suggestion'] = '对比公司年收入规模，如果合同金额占年收入10%以上，影响较大。'
+        
+    else:
+        interpretation['summary'] = f'{stock_name}发布了一则公告，涉及{title}。'
+        interpretation['key_points'] = ['建议仔细阅读公告原文', '关注公告中的关键数字和时间节点']
+        interpretation['impact'] = '需要结合具体内容分析影响。'
+        interpretation['suggestion'] = '如果不确定影响，可以咨询专业人士或观望等待市场反应。'
+    
+    # 如果有内容，尝试提取关键数字
+    if content:
+        import re
+        # 提取金额数字
+        amounts = re.findall(r'(\d+\.?\d*)\s*亿元?', content)
+        if amounts:
+            interpretation['key_points'].append(f'涉及金额：约{amounts[0]}亿元')
+        
+        # 提取百分比
+        percents = re.findall(r'(\d+\.?\d*)%', content)
+        if percents:
+            interpretation['key_points'].append(f'涉及比例：{percents[0]}%')
+    
+    return interpretation
 
 
 if __name__ == '__main__':

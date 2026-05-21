@@ -490,63 +490,73 @@ class _NewsScreenState extends State<NewsScreen> {
     required String stockCode,
     String url = '',
   }) {
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: Text(title, style: TextStyle(fontSize: 16.sp)),
-        content: SingleChildScrollView(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Row(
-                children: [
-                  Chip(
-                    label: Text(type),
-                    backgroundColor: Theme.of(context).colorScheme.secondary.withOpacity(0.1),
-                  ),
-                  SizedBox(width: 8.w),
-                  Text(date, style: TextStyle(color: Colors.grey)),
-                ],
-              ),
-              SizedBox(height: 8.h),
-              Text('$stockName ($stockCode)', style: TextStyle(fontWeight: FontWeight.bold, color: Colors.grey[600])),
-              SizedBox(height: 16.h),
-              Text(
-                'AI解读',
-                style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14.sp),
-              ),
-              SizedBox(height: 8.h),
-              Container(
-                padding: EdgeInsets.all(12.w),
-                decoration: BoxDecoration(
-                  color: Theme.of(context).colorScheme.primary.withOpacity(0.1),
-                  borderRadius: BorderRadius.circular(8.r),
-                ),
-                child: Text(
-                  _generateAiInterpretation(type, title, stockName),
-                  style: TextStyle(color: Theme.of(context).colorScheme.primary),
-                ),
-              ),
-            ],
-          ),
+    // 如果有URL，显示原文解读弹窗
+    if (url.isNotEmpty) {
+      showModalBottomSheet(
+        context: context,
+        isScrollControlled: true,
+        builder: (context) => _AnnouncementDetailSheet(
+          title: title,
+          date: date,
+          type: type,
+          stockName: stockName,
+          stockCode: stockCode,
+          url: url,
+          backendService: _backendService,
         ),
-        actions: [
-          if (url.isNotEmpty)
-            TextButton(
-              onPressed: () {
-                // TODO: 打开网页查看原文
-                Navigator.pop(context);
-              },
-              child: const Text('查看原文'),
+      );
+    } else {
+      // 没有URL，显示简单解读
+      showDialog(
+        context: context,
+        builder: (context) => AlertDialog(
+          title: Text(title, style: TextStyle(fontSize: 16.sp)),
+          content: SingleChildScrollView(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Row(
+                  children: [
+                    Chip(
+                      label: Text(type),
+                      backgroundColor: Theme.of(context).colorScheme.secondary.withOpacity(0.1),
+                    ),
+                    SizedBox(width: 8.w),
+                    Text(date, style: TextStyle(color: Colors.grey)),
+                  ],
+                ),
+                SizedBox(height: 8.h),
+                Text('$stockName ($stockCode)', style: TextStyle(fontWeight: FontWeight.bold, color: Colors.grey[600])),
+                SizedBox(height: 16.h),
+                Text(
+                  'AI解读',
+                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14.sp),
+                ),
+                SizedBox(height: 8.h),
+                Container(
+                  padding: EdgeInsets.all(12.w),
+                  decoration: BoxDecoration(
+                    color: Theme.of(context).colorScheme.primary.withOpacity(0.1),
+                    borderRadius: BorderRadius.circular(8.r),
+                  ),
+                  child: Text(
+                    _generateAiInterpretation(type, title, stockName),
+                    style: TextStyle(color: Theme.of(context).colorScheme.primary),
+                  ),
+                ),
+              ],
             ),
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('关闭'),
           ),
-        ],
-      ),
-    );
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('关闭'),
+            ),
+          ],
+        ),
+      );
+    }
   }
 
   /// 根据公告类型和标题生成简单 AI 解读 - 使用大白话
@@ -806,14 +816,321 @@ class _StockAnnouncementSheetState extends State<_StockAnnouncementSheet> {
                           ),
                         )),
                       ],
-                    ],
+                    ),
                   ),
                 ),
               ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+}
+
+/// 公告详情底部弹窗 - 显示原文深度解读
+class _AnnouncementDetailSheet extends StatefulWidget {
+  final String title;
+  final String date;
+  final String type;
+  final String stockName;
+  final String stockCode;
+  final String url;
+  final BackendService backendService;
+
+  const _AnnouncementDetailSheet({
+    required this.title,
+    required this.date,
+    required this.type,
+    required this.stockName,
+    required this.stockCode,
+    required this.url,
+    required this.backendService,
+  });
+
+  @override
+  State<_AnnouncementDetailSheet> createState() => _AnnouncementDetailSheetState();
+}
+
+class _AnnouncementDetailSheetState extends State<_AnnouncementDetailSheet> {
+  Map<String, dynamic>? _detailData;
+  bool _isLoading = true;
+  String? _error;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadDetail();
+  }
+
+  Future<void> _loadDetail() async {
+    try {
+      final result = await widget.backendService.getAnnouncementDetail(
+        url: widget.url,
+        title: widget.title,
+        stockName: widget.stockName,
+      );
+
+      setState(() {
+        _detailData = result;
+        _isLoading = false;
+      });
+    } catch (e) {
+      setState(() {
+        _error = '加载公告详情失败';
+        _isLoading = false;
+      });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return DraggableScrollableSheet(
+      initialChildSize: 0.85,
+      minChildSize: 0.5,
+      maxChildSize: 0.95,
+      expand: false,
+      builder: (context, scrollController) {
+        return Container(
+          padding: EdgeInsets.all(16.w),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // 标题栏
+              Row(
+                children: [
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          '公告详情',
+                          style: TextStyle(fontSize: 18.sp, fontWeight: FontWeight.bold),
+                        ),
+                        SizedBox(height: 4.h),
+                        Text(
+                          '${widget.stockName} (${widget.stockCode})',
+                          style: TextStyle(fontSize: 13.sp, color: Colors.grey),
+                        ),
+                      ],
+                    ),
+                  ),
+                  IconButton(
+                    icon: const Icon(Icons.close),
+                    onPressed: () => Navigator.pop(context),
+                  ),
+                ],
+              ),
+              Divider(height: 24.h),
+
+              if (_isLoading)
+                const Expanded(
+                  child: Center(child: CircularProgressIndicator()),
+                )
+              else if (_error != null)
+                Expanded(
+                  child: Center(
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Icon(Icons.error_outline, size: 48.sp, color: Colors.grey),
+                        SizedBox(height: 8.h),
+                        Text(_error!, style: TextStyle(color: Colors.grey)),
+                        SizedBox(height: 8.h),
+                        ElevatedButton(
+                          onPressed: _loadDetail,
+                          child: const Text('重试'),
+                        ),
+                      ],
+                    ),
+                  ),
+                )
+              else
+                Expanded(
+                  child: ListView(
+                    controller: scrollController,
+                    children: [
+                      // 公告基本信息
+                      Row(
+                        children: [
+                          Chip(
+                            label: Text(widget.type),
+                            backgroundColor: Theme.of(context).colorScheme.primary.withOpacity(0.1),
+                          ),
+                          SizedBox(width: 8.w),
+                          Icon(Icons.calendar_today, size: 14.sp, color: Colors.grey),
+                          SizedBox(width: 4.w),
+                          Text(
+                            widget.date,
+                            style: TextStyle(fontSize: 13.sp, color: Colors.grey),
+                          ),
+                        ],
+                      ),
+                      SizedBox(height: 12.h),
+
+                      // 公告标题
+                      Text(
+                        widget.title,
+                        style: TextStyle(fontSize: 16.sp, fontWeight: FontWeight.w600),
+                      ),
+                      SizedBox(height: 16.h),
+
+                      // 深度解读
+                      if (_detailData != null && _detailData!['interpretation'] != null) ...[
+                        _buildInterpretationSection(_detailData!['interpretation']),
+                        SizedBox(height: 16.h),
+                      ],
+
+                      // 原文预览
+                      if (_detailData != null && _detailData!['content_preview'] != null) ...[
+                        _buildContentPreview(_detailData!['content_preview']),
+                      ],
+                    ],
+                  ),
+                ),
             ],
           ),
         );
       },
+    );
+  }
+
+  Widget _buildInterpretationSection(Map<String, dynamic> interpretation) {
+    return Container(
+      padding: EdgeInsets.all(16.w),
+      decoration: BoxDecoration(
+        color: Theme.of(context).colorScheme.primary.withOpacity(0.05),
+        borderRadius: BorderRadius.circular(12.r),
+        border: Border.all(color: Theme.of(context).colorScheme.primary.withOpacity(0.2)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(Icons.auto_awesome, color: Theme.of(context).colorScheme.primary, size: 20.sp),
+              SizedBox(width: 8.w),
+              Text(
+                'AI深度解读',
+                style: TextStyle(
+                  fontSize: 16.sp,
+                  fontWeight: FontWeight.bold,
+                  color: Theme.of(context).colorScheme.primary,
+                ),
+              ),
+            ],
+          ),
+          SizedBox(height: 12.h),
+
+          // 摘要
+          if (interpretation['summary'] != null) ...[
+            Text(
+              '📝 摘要',
+              style: TextStyle(fontSize: 14.sp, fontWeight: FontWeight.w600),
+            ),
+            SizedBox(height: 4.h),
+            Text(
+              interpretation['summary'],
+              style: TextStyle(fontSize: 13.sp, color: Colors.grey[800]),
+            ),
+            SizedBox(height: 12.h),
+          ],
+
+          // 关键要点
+          if (interpretation['key_points'] != null && (interpretation['key_points'] as List).isNotEmpty) ...[
+            Text(
+              '🔑 关键要点',
+              style: TextStyle(fontSize: 14.sp, fontWeight: FontWeight.w600),
+            ),
+            SizedBox(height: 4.h),
+            ...((interpretation['key_points'] as List).map((point) => Padding(
+              padding: EdgeInsets.only(bottom: 4.h),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text('• ', style: TextStyle(fontSize: 13.sp)),
+                  Expanded(
+                    child: Text(
+                      point.toString(),
+                      style: TextStyle(fontSize: 13.sp, color: Colors.grey[800]),
+                    ),
+                  ),
+                ],
+              ),
+            ))),
+            SizedBox(height: 12.h),
+          ],
+
+          // 影响分析
+          if (interpretation['impact'] != null) ...[
+            Text(
+              '📊 影响分析',
+              style: TextStyle(fontSize: 14.sp, fontWeight: FontWeight.w600),
+            ),
+            SizedBox(height: 4.h),
+            Text(
+              interpretation['impact'],
+              style: TextStyle(fontSize: 13.sp, color: Colors.grey[800]),
+            ),
+            SizedBox(height: 12.h),
+          ],
+
+          // 投资建议
+          if (interpretation['suggestion'] != null) ...[
+            Text(
+              '💡 投资建议',
+              style: TextStyle(fontSize: 14.sp, fontWeight: FontWeight.w600),
+            ),
+            SizedBox(height: 4.h),
+            Text(
+              interpretation['suggestion'],
+              style: TextStyle(fontSize: 13.sp, color: Colors.grey[800]),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _buildContentPreview(String content) {
+    return Container(
+      padding: EdgeInsets.all(16.w),
+      decoration: BoxDecoration(
+        color: Colors.grey[50],
+        borderRadius: BorderRadius.circular(12.r),
+        border: Border.all(color: Colors.grey[300]!),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(Icons.description, color: Colors.grey[600], size: 18.sp),
+              SizedBox(width: 8.w),
+              Text(
+                '原文预览',
+                style: TextStyle(
+                  fontSize: 14.sp,
+                  fontWeight: FontWeight.w600,
+                  color: Colors.grey[800],
+                ),
+              ),
+            ],
+          ),
+          SizedBox(height: 8.h),
+          Text(
+            content,
+            style: TextStyle(fontSize: 12.sp, color: Colors.grey[700], height: 1.5),
+          ),
+          if (content.length >= 500) ...[
+            SizedBox(height: 8.h),
+            Text(
+              '... (内容已截断)',
+              style: TextStyle(fontSize: 12.sp, color: Colors.grey, fontStyle: FontStyle.italic),
+            ),
+          ],
+        ],
+      ),
     );
   }
 }
