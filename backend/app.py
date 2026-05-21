@@ -356,6 +356,10 @@ def stock_screen():
         for col in required_cols:
             if col not in df.columns:
                 return jsonify({'success': False, 'error': f'缺少必需列: {col}', 'columns': df.columns.tolist()}), 500
+        
+        # 确保数据框不为空
+        if df.empty:
+            return jsonify({'success': False, 'error': '获取的股票数据为空', 'data': []}), 500
 
         # 数据清洗和转换
         numeric_cols = ['price', 'change_percent', 'pe', 'pb', 'market_cap', 'turnover', 'roe']
@@ -445,8 +449,9 @@ def stock_screen():
         return jsonify(result)
 
     except Exception as e:
-        traceback.print_exc()
-        return jsonify({'success': False, 'error': str(e)}), 500
+        error_detail = traceback.format_exc()
+        print(f"[stock_screen] 错误: {e}\n{error_detail}")
+        return jsonify({'success': False, 'error': str(e), 'detail': error_detail}), 500
 
 
 @app.route('/api/stock/recommend', methods=['GET'])
@@ -622,8 +627,9 @@ def stock_recommend():
         return jsonify(result)
 
     except Exception as e:
-        traceback.print_exc()
-        return jsonify({'success': False, 'error': str(e)}), 500
+        error_detail = traceback.format_exc()
+        print(f"[stock_recommend] 错误: {e}\n{error_detail}")
+        return jsonify({'success': False, 'error': str(e), 'detail': error_detail}), 500
 
 
 @app.route('/api/stock/industries', methods=['GET'])
