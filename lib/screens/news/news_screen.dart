@@ -773,14 +773,15 @@ class _StockAnnouncementSheetState extends State<_StockAnnouncementSheet> {
                             dense: true,
                             onTap: () {
                               // 显示公告详情
-                              Navigator.pop(context); // 先关闭当前sheet
-                              _showAnnouncementDetail(
+                              _showAnnouncementDetailFromSheet(
+                                context: context,
                                 title: a['title'] ?? '',
                                 date: a['date'] ?? '',
                                 type: a['type'] ?? '公告',
                                 stockName: widget.name,
                                 stockCode: widget.code,
                                 url: a['url'] ?? '',
+                                backendService: widget.backendService,
                               );
                             },
                           ),
@@ -1146,4 +1147,63 @@ class _AnnouncementDetailSheetState extends State<_AnnouncementDetailSheet> {
       ),
     );
   }
+}
+
+/// 从底部弹窗显示公告详情（供 _StockAnnouncementSheet 使用）
+void _showAnnouncementDetailFromSheet({
+  required BuildContext context,
+  required String title,
+  required String date,
+  required String type,
+  required String stockName,
+  required String stockCode,
+  required String url,
+  required BackendService backendService,
+}) {
+  // 先关闭当前sheet
+  Navigator.pop(context);
+
+  // 延迟显示新弹窗，等待sheet关闭动画完成
+  Future.delayed(const Duration(milliseconds: 300), () {
+    if (url.isNotEmpty) {
+      showModalBottomSheet(
+        context: context,
+        isScrollControlled: true,
+        builder: (context) => _AnnouncementDetailSheet(
+          title: title,
+          date: date,
+          type: type,
+          stockName: stockName,
+          stockCode: stockCode,
+          url: url,
+          backendService: backendService,
+        ),
+      );
+    } else {
+      // 没有URL时显示简单弹窗
+      showDialog(
+        context: context,
+        builder: (context) => AlertDialog(
+          title: Text(title),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text('$stockName ($stockCode)'),
+              SizedBox(height: 8.h),
+              Text('日期: $date'),
+              SizedBox(height: 8.h),
+              Text('类型: $type'),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('关闭'),
+            ),
+          ],
+        ),
+      );
+    }
+  });
 }
