@@ -11,6 +11,8 @@ import json
 from datetime import datetime, timedelta
 import traceback
 import pandas as pd
+import time
+import threading
 
 app = Flask(__name__)
 CORS(app)
@@ -35,7 +37,6 @@ def set_cached(key, data, timeout_seconds=300):
 
 
 # ========== 全局股票数据缓存 ==========
-import threading
 _stock_data_lock = threading.Lock()
 _stock_data_cache = {
     'df': None,
