@@ -566,13 +566,31 @@ def normalize_stock_data(df):
         '所属行业': 'industry',
         'ROE': 'roe',
     }
-    
+
+    # 新浪接口的列名映射（注意：新浪接口没有PE/PB/市值等财务指标）
+    sina_mapping = {
+        '代码': 'code',
+        '名称': 'name',
+        '最新价': 'price',
+        '涨跌幅': 'change_percent',
+    }
+
     # 如果列名已经是英文，直接返回
     if 'code' in df.columns or '名称' not in df.columns:
         return df
-    
-    # 重命名列
-    df = df.rename(columns=em_mapping)
+
+    # 判断数据源类型：如果有'市盈率-动态'是东方财富，否则是新浪
+    if '市盈率-动态' in df.columns:
+        # 东方财富接口 - 使用完整映射
+        df = df.rename(columns=em_mapping)
+    else:
+        # 新浪接口 - 只映射基本字段，财务指标设为NaN
+        df = df.rename(columns=sina_mapping)
+        # 新浪接口缺少财务指标，添加空列
+        for col in ['pe', 'pb', 'market_cap', 'turnover', 'industry', 'roe']:
+            if col not in df.columns:
+                df[col] = float('nan')
+
     return df
 
 
@@ -657,11 +675,11 @@ def stock_screen():
         if industry and 'industry' in df.columns:
             df = df[df['industry'].str.contains(industry, na=False)]
 
-        # 排除异常值
+        # 排除异常值（只排除非NaN的负值）
         if 'pe' in df.columns:
-            df = df[df['pe'] > 0]  # 排除负PE
+            df = df[(df['pe'].isna()) | (df['pe'] > 0)]  # 保留NaN和正PE
         if 'pb' in df.columns:
-            df = df[df['pb'] > 0]  # 排除负PB
+            df = df[(df['pb'].isna()) | (df['pb'] > 0)]  # 保留NaN和正PB
 
         # 排序（按涨跌幅降序）
         if 'change_percent' in df.columns:
@@ -768,26 +786,27 @@ def stock_recommend():
             # 价值策略：低PE、低PB、大市值
             strategy_desc = "低估值高分红，适合稳健投资"
             if 'pe' in filtered_df.columns:
-                filtered_df = filtered_df[filtered_df['pe'] > 0]
-                filtered_df = filtered_df[filtered_df['pe'] < 20]
+                # 只筛选有有效PE值的股票，NaN保留
+                filtered_df = filtered_df[(filtered_df['pe'].isna()) | (filtered_df['pe'] > 0)]
+                filtered_df = filtered_df[(filtered_df['pe'].isna()) | (filtered_df['pe'] < 20)]
             if 'pb' in filtered_df.columns:
-                filtered_df = filtered_df[filtered_df['pb'] > 0]
-                filtered_df = filtered_df[filtered_df['pb'] < 3]
+                filtered_df = filtered_df[(filtered_df['pb'].isna()) | (filtered_df['pb'] > 0)]
+                filtered_df = filtered_df[(filtered_df['pb'].isna()) | (filtered_df['pb'] < 3)]
             if 'market_cap' in filtered_df.columns:
-                filtered_df = filtered_df[filtered_df['market_cap'] > 100]
-            # 按PE升序（越低越好）
+                filtered_df = filtered_df[(filtered_df['market_cap'].isna()) | (filtered_df['market_cap'] > 100)]
+            # 按PE升序（越低越好）- 有PE的排前面
             if 'pe' in filtered_df.columns:
-                filtered_df = filtered_df.sort_values('pe', ascending=True)
+                filtered_df = filtered_df.sort_values('pe', ascending=True, na_position='last')
 
         elif strategy == 'growth':
             # 成长策略：中等PE、高涨幅、中小市值
             strategy_desc = "高成长潜力，适合激进投资"
             if 'pe' in filtered_df.columns:
-                filtered_df = filtered_df[filtered_df['pe'] > 10]
-                filtered_df = filtered_df[filtered_df['pe'] < 80]
+                filtered_df = filtered_df[(filtered_df['pe'].isna()) | (filtered_df['pe'] > 10)]
+                filtered_df = filtered_df[(filtered_df['pe'].isna()) | (filtered_df['pe'] < 80)]
             if 'market_cap' in filtered_df.columns:
-                filtered_df = filtered_df[filtered_df['market_cap'] > 20]
-                filtered_df = filtered_df[filtered_df['market_cap'] < 500]
+                filtered_df = filtered_df[(filtered_df['market_cap'].isna()) | (filtered_df['market_cap'] > 20)]
+                filtered_df = filtered_df[(filtered_df['market_cap'].isna()) | (filtered_df['market_cap'] < 500)]
             if 'change_percent' in filtered_df.columns:
                 filtered_df = filtered_df[filtered_df['change_percent'] > -5]
             # 按涨跌幅降序
@@ -800,7 +819,7 @@ def stock_recommend():
             if 'change_percent' in filtered_df.columns:
                 filtered_df = filtered_df[filtered_df['change_percent'] > 2]
             if 'market_cap' in filtered_df.columns:
-                filtered_df = filtered_df[filtered_df['market_cap'] > 50]
+                filtered_df = filtered_df[(filtered_df['market_cap'].isna()) | (filtered_df['market_cap'] > 50)]
             # 按涨跌幅降序
             if 'change_percent' in filtered_df.columns:
                 filtered_df = filtered_df.sort_values('change_percent', ascending=False)
@@ -808,26 +827,20 @@ def stock_recommend():
         else:  # comprehensive - 综合选股
             strategy_desc = "多维度综合评分，均衡配置"
             if 'pe' in filtered_df.columns:
-                filtered_df = filtered_df[filtered_df['pe'] > 5]
-                filtered_df = filtered_df[filtered_df['pe'] < 50]
+                filtered_df = filtered_df[(filtered_df['pe'].isna()) | (filtered_df['pe'] > 5)]
+                filtered_df = filtered_df[(filtered_df['pe'].isna()) | (filtered_df['pe'] < 50)]
             if 'pb' in filtered_df.columns:
-                filtered_df = filtered_df[filtered_df['pb'] > 0]
-                filtered_df = filtered_df[filtered_df['pb'] < 5]
+                filtered_df = filtered_df[(filtered_df['pb'].isna()) | (filtered_df['pb'] > 0)]
+                filtered_df = filtered_df[(filtered_df['pb'].isna()) | (filtered_df['pb'] < 5)]
             if 'market_cap' in filtered_df.columns:
-                filtered_df = filtered_df[filtered_df['market_cap'] > 50]
+                filtered_df = filtered_df[(filtered_df['market_cap'].isna()) | (filtered_df['market_cap'] > 50)]
             if 'change_percent' in filtered_df.columns:
                 filtered_df = filtered_df[filtered_df['change_percent'] > -3]
-            # 综合排序
-            score_parts = []
-            if 'pe' in filtered_df.columns:
-                score_parts.append((100 - filtered_df['pe'].clip(0, 100)) * 0.3)
-            if 'pb' in filtered_df.columns:
-                score_parts.append((10 - filtered_df['pb'].clip(0, 10)) * 10 * 0.3)
+            # 综合排序（优先使用涨跌幅，因为PE/PB可能为NaN）
             if 'change_percent' in filtered_df.columns:
-                score_parts.append(filtered_df['change_percent'].clip(-10, 10) * 2 * 0.4)
-            if score_parts:
-                filtered_df['score'] = sum(score_parts)
-                filtered_df = filtered_df.sort_values('score', ascending=False)
+                filtered_df = filtered_df.sort_values('change_percent', ascending=False)
+            elif 'pe' in filtered_df.columns:
+                filtered_df = filtered_df.sort_values('pe', ascending=True, na_position='last')
 
         # 取前N个
         result_df = filtered_df.head(count)

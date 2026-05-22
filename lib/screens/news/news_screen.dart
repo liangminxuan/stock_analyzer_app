@@ -770,6 +770,18 @@ class _StockAnnouncementSheetState extends State<_StockAnnouncementSheet> {
                               ],
                             ),
                             dense: true,
+                            onTap: () {
+                              // 显示公告详情
+                              Navigator.pop(context); // 先关闭当前sheet
+                              _showAnnouncementDetail(
+                                title: a['title'] ?? '',
+                                date: a['date'] ?? '',
+                                type: a['type'] ?? '公告',
+                                stockName: widget.name,
+                                stockCode: widget.code,
+                                url: a['url'] ?? '',
+                              );
+                            },
                           ),
                         )),
 
