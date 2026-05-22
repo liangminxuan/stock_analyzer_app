@@ -675,8 +675,10 @@ def stock_screen():
             if col in df.columns:
                 df[col] = pd.to_numeric(df[col], errors='coerce')
 
+        # 市值单位转换：如果市值 > 100000，说明是元，需要转为亿；否则已经是亿
         if 'market_cap' in df.columns:
-            df['market_cap'] = df['market_cap'] / 100000000  # 转为亿
+            if df['market_cap'].max() > 100000:
+                df['market_cap'] = df['market_cap'] / 100000000  # 转为亿
 
         # 应用筛选条件
         if pe_min is not None and 'pe' in df.columns:
@@ -798,8 +800,10 @@ def stock_recommend():
             if col in df.columns:
                 df[col] = pd.to_numeric(df[col], errors='coerce')
 
+        # 市值单位转换：如果市值 > 100000，说明是元，需要转为亿；否则已经是亿
         if 'market_cap' in df.columns:
-            df['market_cap'] = df['market_cap'] / 100000000  # 转为亿
+            if df['market_cap'].max() > 100000:
+                df['market_cap'] = df['market_cap'] / 100000000  # 转为亿
 
         # 根据策略筛选
         filtered_df = df.copy()
