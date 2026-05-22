@@ -47,15 +47,14 @@ _stock_data_cache = {
 }
 
 def get_stock_data():
-    """获取A股实时数据（带缓存，缓存30分钟）
+    """获取A股实时数据（带缓存，缓存2小时）
     如果数据正在加载中，会等待加载完成（最多120秒）
     """
-    import time
     now = time.time()
 
-    # 缓存有效期内直接返回
+    # 缓存有效期内直接返回（2小时）
     with _stock_data_lock:
-        if _stock_data_cache['df'] is not None and (now - _stock_data_cache['last_update']) < 1800:
+        if _stock_data_cache['df'] is not None and (now - _stock_data_cache['last_update']) < 7200:
             return _stock_data_cache['df']
 
         # 如果正在加载，等待加载完成
@@ -84,70 +83,78 @@ def get_stock_data():
 
 
 def _load_stock_data():
-    """实际执行数据加载（在后台线程中运行）"""
-    import time
+    """实际执行数据加载（在后台线程中运行），最多重试2次"""
     try:
-        print("[get_stock_data] 开始获取A股实时数据...")
-        start = time.time()
+        for attempt in range(3):
+            print(f"[get_stock_data] 开始获取A股实时数据... (第{attempt+1}次)")
+            start = time.time()
 
-        df = None
-        errors = []
+            df = None
+            errors = []
 
-        # 尝试1: 东方财富接口
-        try:
-            df = ak.stock_zh_a_spot_em()
-            print(f"[get_stock_data] stock_zh_a_spot_em() 成功, {len(df)} 行, 耗时 {time.time()-start:.1f}s")
-        except Exception as e1:
-            errors.append(f"东方财富: {e1}")
-            print(f"[get_stock_data] 东方财富接口失败: {e1}")
-
-        # 尝试2: 备用接口
-        if df is None:
+            # 尝试1: 东方财富接口
             try:
-                df = ak.stock_zh_a_spot()
-                print(f"[get_stock_data] stock_zh_a_spot() 成功, {len(df)} 行, 耗时 {time.time()-start:.1f}s")
-            except Exception as e2:
-                errors.append(f"备用: {e2}")
-                print(f"[get_stock_data] 备用接口也失败: {e2}")
+                df = ak.stock_zh_a_spot_em()
+                print(f"[get_stock_data] stock_zh_a_spot_em() 成功, {len(df)} 行, 耗时 {time.time()-start:.1f}s")
+            except Exception as e1:
+                errors.append(f"东方财富: {str(e1)[:100]}")
+                print(f"[get_stock_data] 东方财富接口失败: {e1}")
 
-        # 尝试3: 新浪实时行情接口（更轻量）
-        if df is None:
-            try:
-                import requests
-                # 获取沪深300成分股作为备选池
-                url = "https://money.finance.sina.com.cn/d/api/openapi_proxy.php/?__s=[[%22hq%22,%22hs_a%22,%22%22%2C%22%22%2C50%2C1]]"
-                resp = requests.get(url, timeout=15)
-                data = resp.json()
-                if data and data[0] and 'items' in data[0]:
-                    items = data[0]['items']
-                    rows = []
-                    for item in items:
-                        rows.append({
-                            '代码': item[0],
-                            '名称': item[1],
-                            '最新价': item[2],
-                            '涨跌幅': item[3],
-                            '市盈率-动态': item[4] if len(item) > 4 else None,
-                            '市净率': item[5] if len(item) > 5 else None,
-                            '总市值': item[6] if len(item) > 6 else None,
-                            '换手率': item[7] if len(item) > 7 else None,
-                        })
-                    df = pd.DataFrame(rows)
-                    print(f"[get_stock_data] 新浪接口成功, {len(df)} 行, 耗时 {time.time()-start:.1f}s")
-            except Exception as e3:
-                errors.append(f"新浪: {e3}")
-                print(f"[get_stock_data] 新浪接口也失败: {e3}")
+            # 尝试2: 备用接口
+            if df is None:
+                try:
+                    df = ak.stock_zh_a_spot()
+                    print(f"[get_stock_data] stock_zh_a_spot() 成功, {len(df)} 行, 耗时 {time.time()-start:.1f}s")
+                except Exception as e2:
+                    errors.append(f"备用: {str(e2)[:100]}")
+                    print(f"[get_stock_data] 备用接口也失败: {e2}")
 
-        with _stock_data_lock:
+            # 尝试3: 新浪实时行情接口（更轻量）
+            if df is None:
+                try:
+                    import requests as req_lib
+                    url = "https://money.finance.sina.com.cn/d/api/openapi_proxy.php/?__s=[[%22hq%22,%22hs_a%22,%22%22%2C%22%22%2C50%2C1]]"
+                    resp = req_lib.get(url, timeout=15)
+                    data = resp.json()
+                    if data and data[0] and 'items' in data[0]:
+                        items = data[0]['items']
+                        rows = []
+                        for item in items:
+                            rows.append({
+                                '代码': item[0],
+                                '名称': item[1],
+                                '最新价': item[2],
+                                '涨跌幅': item[3],
+                                '市盈率-动态': item[4] if len(item) > 4 else None,
+                                '市净率': item[5] if len(item) > 5 else None,
+                                '总市值': item[6] if len(item) > 6 else None,
+                                '换手率': item[7] if len(item) > 7 else None,
+                            })
+                        df = pd.DataFrame(rows)
+                        print(f"[get_stock_data] 新浪接口成功, {len(df)} 行, 耗时 {time.time()-start:.1f}s")
+                except Exception as e3:
+                    errors.append(f"新浪: {str(e3)[:100]}")
+                    print(f"[get_stock_data] 新浪接口也失败: {e3}")
+
             if df is not None and not df.empty:
-                _stock_data_cache['df'] = df
-                _stock_data_cache['last_update'] = time.time()
-                _stock_data_cache['load_error'] = None
-                print(f"[get_stock_data] 数据加载完成, {len(df)} 行")
-            else:
-                _stock_data_cache['load_error'] = "; ".join(errors)
-                print(f"[get_stock_data] 所有接口均失败: {errors}")
+                with _stock_data_lock:
+                    _stock_data_cache['df'] = df
+                    _stock_data_cache['last_update'] = time.time()
+                    _stock_data_cache['load_error'] = None
+                    print(f"[get_stock_data] 数据加载完成, {len(df)} 行")
+                return
+
+            # 所有接口都失败，等待后重试
+            print(f"[get_stock_data] 第{attempt+1}次尝试全部失败: {errors}")
+            if attempt < 2:
+                print(f"[get_stock_data] 等待10秒后重试...")
+                time.sleep(10)
+
+        # 3次都失败
+        with _stock_data_lock:
+            _stock_data_cache['load_error'] = "; ".join(errors)
             _stock_data_cache['loading'] = False
+            print(f"[get_stock_data] 3次尝试均失败，放弃加载")
 
     except Exception as e:
         with _stock_data_lock:
@@ -159,7 +166,7 @@ def _load_stock_data():
 def warmup_stock_data():
     """后台预热股票数据"""
     with _stock_data_lock:
-        if _stock_data_cache['loading'] or (_stock_data_cache['df'] is not None and (time.time() - _stock_data_cache['last_update']) < 1800):
+        if _stock_data_cache['loading'] or (_stock_data_cache['df'] is not None and (time.time() - _stock_data_cache['last_update']) < 7200):
             return
         _stock_data_cache['loading'] = True
         _stock_data_cache['load_error'] = None
