@@ -1160,50 +1160,45 @@ void _showAnnouncementDetailFromSheet({
   required String url,
   required BackendService backendService,
 }) {
-  // 先关闭当前sheet
-  Navigator.pop(context);
-
-  // 延迟显示新弹窗，等待sheet关闭动画完成
-  Future.delayed(const Duration(milliseconds: 300), () {
-    if (url.isNotEmpty) {
-      showModalBottomSheet(
-        context: context,
-        isScrollControlled: true,
-        builder: (context) => _AnnouncementDetailSheet(
-          title: title,
-          date: date,
-          type: type,
-          stockName: stockName,
-          stockCode: stockCode,
-          url: url,
-          backendService: backendService,
-        ),
-      );
-    } else {
-      // 没有URL时显示简单弹窗
-      showDialog(
-        context: context,
-        builder: (context) => AlertDialog(
-          title: Text(title),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text('$stockName ($stockCode)'),
-              SizedBox(height: 8.h),
-              Text('日期: $date'),
-              SizedBox(height: 8.h),
-              Text('类型: $type'),
-            ],
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(context),
-              child: const Text('关闭'),
-            ),
+  if (url.isNotEmpty) {
+    // 直接在当前 sheet 之上显示详情弹窗（不关闭当前 sheet）
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      builder: (context) => _AnnouncementDetailSheet(
+        title: title,
+        date: date,
+        type: type,
+        stockName: stockName,
+        stockCode: stockCode,
+        url: url,
+        backendService: backendService,
+      ),
+    );
+  } else {
+    // 没有URL时显示简单弹窗
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text(title),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('$stockName ($stockCode)'),
+            SizedBox(height: 8.h),
+            Text('日期: $date'),
+            SizedBox(height: 8.h),
+            Text('类型: $type'),
           ],
         ),
-      );
-    }
-  });
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('关闭'),
+          ),
+        ],
+      ),
+    );
+  }
 }
