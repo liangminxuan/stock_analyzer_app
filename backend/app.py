@@ -2,6 +2,7 @@
 股票数据后端服务 - 使用 AKShare 获取公告、新闻、财报、选股数据
 部署: python app.py
 端口: 5000
+AKShare数据源: 东方财富、新浪财经
 """
 
 from flask import Flask, jsonify, request
