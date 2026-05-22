@@ -623,13 +623,15 @@ def get_stock_analysis():
 
 def normalize_stock_data(df):
     """统一不同数据源的股票数据列名"""
-    # 东方财富接口的列名映射
+    # 东方财富接口的列名映射（兼容多个版本）
     em_mapping = {
         '代码': 'code',
         '名称': 'name',
         '最新价': 'price',
         '涨跌幅': 'change_percent',
         '市盈率-动态': 'pe',
+        '市盈率(动)': 'pe',
+        '动态市盈率': 'pe',
         '市净率': 'pb',
         '总市值': 'market_cap',
         '换手率': 'turnover',
@@ -637,7 +639,7 @@ def normalize_stock_data(df):
         'ROE': 'roe',
     }
 
-    # 新浪接口的列名映射（注意：新浪接口没有PE/PB/市值等财务指标）
+    # 新浪接口的列名映射
     sina_mapping = {
         '代码': 'code',
         '名称': 'name',
@@ -645,22 +647,54 @@ def normalize_stock_data(df):
         '涨跌幅': 'change_percent',
     }
 
+    # TickFlow 数据源的列名映射
+    tickflow_mapping = {
+        'symbol': 'code',
+        'name': 'name',
+        'close': 'price',
+        'pctChg': 'change_percent',
+    }
+
     # 如果列名已经是英文，直接返回
-    if 'code' in df.columns or '名称' not in df.columns:
+    if 'code' in df.columns:
         return df
 
-    # 判断数据源类型：如果有'市盈率-动态'是东方财富，否则是新浪
-    if '市盈率-动态' in df.columns:
+    # 打印原始列名用于调试
+    print(f"[normalize_stock_data] 原始列名: {df.columns.tolist()}")
+    print(f"[normalize_stock_data] 原始行数: {len(df)}")
+
+    # 判断数据源类型
+    has_pe = any(c in df.columns for c in ['市盈率-动态', '市盈率(动)', '动态市盈率'])
+    has_sina = '代码' in df.columns and not has_pe
+    has_tickflow = 'symbol' in df.columns
+
+    if has_tickflow:
+        df = df.rename(columns=tickflow_mapping)
+        # TickFlow 缺少财务指标
+        for col in ['pe', 'pb', 'market_cap', 'turnover', 'industry', 'roe']:
+            if col not in df.columns:
+                df[col] = float('nan')
+    elif has_pe:
         # 东方财富接口 - 使用完整映射
         df = df.rename(columns=em_mapping)
-    else:
-        # 新浪接口 - 只映射基本字段，财务指标设为NaN
+    elif has_sina:
+        # 新浪接口 - 只映射基本字段
         df = df.rename(columns=sina_mapping)
-        # 新浪接口缺少财务指标，添加空列
+        for col in ['pe', 'pb', 'market_cap', 'turnover', 'industry', 'roe']:
+            if col not in df.columns:
+                df[col] = float('nan')
+    else:
+        # 未知数据源，尝试通用映射
+        df = df.rename(columns=em_mapping)
         for col in ['pe', 'pb', 'market_cap', 'turnover', 'industry', 'roe']:
             if col not in df.columns:
                 df[col] = float('nan')
 
+    # 清理代码前缀 (sh/sz/bj)
+    if 'code' in df.columns:
+        df['code'] = df['code'].astype(str).str.replace(r'^(sh|sz|bj)', '', regex=True)
+
+    print(f"[normalize_stock_data] 映射后列名: {df.columns.tolist()}")
     return df
 
 
