@@ -4,6 +4,7 @@ import '../../services/api_service.dart';
 import '../../services/backend_service.dart';
 
 /// 公告解读页面 - 从后端获取实时公告数据
+/// 公告列表支持点击查看详情
 class NewsScreen extends StatefulWidget {
   const NewsScreen({super.key});
 
