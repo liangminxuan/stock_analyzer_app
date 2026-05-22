@@ -621,6 +621,64 @@ def get_stock_analysis():
 
 # ==================== 智能选股 API ====================
 
+def _get_tickflow_bluechip_data():
+    """使用 TickFlow 免费层获取蓝筹池最新行情（含预设 PE/PB/市值）"""
+    try:
+        from tickflow import TickFlow
+        tf = TickFlow.free()
+        preset_map = {
+            '000001': {'name': '平安银行', 'pe': 6.5, 'pb': 0.6, 'cap': 2000},
+            '000002': {'name': '万科A', 'pe': 8.0, 'pb': 0.8, 'cap': 1500},
+            '600036': {'name': '招商银行', 'pe': 5.5, 'pb': 0.7, 'cap': 8000},
+            '601318': {'name': '中国平安', 'pe': 8.5, 'pb': 1.0, 'cap': 8000},
+            '600519': {'name': '贵州茅台', 'pe': 25.0, 'pb': 8.0, 'cap': 18000},
+            '000858': {'name': '五粮液', 'pe': 20.0, 'pb': 5.0, 'cap': 5000},
+            '002594': {'name': '比亚迪', 'pe': 30.0, 'pb': 6.0, 'cap': 7000},
+            '300750': {'name': '宁德时代', 'pe': 35.0, 'pb': 5.5, 'cap': 7000},
+            '601398': {'name': '工商银行', 'pe': 4.5, 'pb': 0.5, 'cap': 18000},
+            '601288': {'name': '农业银行', 'pe': 4.0, 'pb': 0.4, 'cap': 14000},
+            '600900': {'name': '长江电力', 'pe': 18.0, 'pb': 3.5, 'cap': 5000},
+            '601888': {'name': '中国中免', 'pe': 28.0, 'pb': 4.5, 'cap': 3000},
+            '000333': {'name': '美的集团', 'pe': 12.0, 'pb': 3.0, 'cap': 5000},
+            '002415': {'name': '海康威视', 'pe': 22.0, 'pb': 4.0, 'cap': 3500},
+            '300059': {'name': '东方财富', 'pe': 30.0, 'pb': 5.0, 'cap': 2500},
+            '600276': {'name': '恒瑞医药', 'pe': 40.0, 'pb': 6.5, 'cap': 3000},
+            '000568': {'name': '泸州老窖', 'pe': 18.0, 'pb': 5.5, 'cap': 2500},
+            '002304': {'name': '洋河股份', 'pe': 15.0, 'pb': 2.5, 'cap': 2000},
+            '601166': {'name': '兴业银行', 'pe': 5.0, 'pb': 0.6, 'cap': 4000},
+            '600887': {'name': '伊利股份', 'pe': 16.0, 'pb': 3.5, 'cap': 2000},
+        }
+        rows = []
+        for code, info in preset_map.items():
+            tf_code = f"{code}.SZ" if code.startswith(('0', '3')) else f"{code}.SH"
+            try:
+                kdf = tf.klines.get(tf_code, period="1d", as_dataframe=True)
+                if kdf is not None and len(kdf) >= 2:
+                    latest = kdf.iloc[-1]
+                    prev = kdf.iloc[-2]
+                    close = float(latest['close'])
+                    prev_close = float(prev['close'])
+                    pct_chg = round((close - prev_close) / prev_close * 100, 2)
+                    name = str(latest.get('name', info['name']))
+                    rows.append({
+                        '代码': code, '名称': name, '最新价': close,
+                        '涨跌幅': pct_chg, '市盈率-动态': info['pe'],
+                        '市净率': info['pb'], '总市值': info['cap'],
+                        '换手率': None,
+                    })
+            except:
+                rows.append({
+                    '代码': code, '名称': info['name'], '最新价': 0,
+                    '涨跌幅': 0, '市盈率-动态': info['pe'],
+                    '市净率': info['pb'], '总市值': info['cap'],
+                    '换手率': None,
+                })
+        return pd.DataFrame(rows)
+    except Exception as e:
+        print(f"[tickflow_bluechip] 获取失败: {e}")
+        return None
+
+
 def normalize_stock_data(df):
     """统一不同数据源的股票数据列名"""
     # 东方财富接口的列名映射（兼容多个版本）
@@ -870,6 +928,23 @@ def stock_recommend():
 
         # 标准化列名
         df = normalize_stock_data(df)
+        
+        # 检查数据质量：如果 PE/PB 全为空，说明数据源缺少财务指标
+        # 此时降级到 TickFlow 蓝筹池（有预设的 PE/PB/市值）
+        has_financial = False
+        if 'pe' in df.columns and df['pe'].notna().any():
+            has_financial = True
+        if 'pb' in df.columns and df['pb'].notna().any():
+            has_financial = True
+
+        if not has_financial and strategy in ('value', 'comprehensive'):
+            print(f"[stock_recommend] 数据缺少财务指标(PE/PB)，降级到 TickFlow 蓝筹池")
+            df = _get_tickflow_bluechip_data()
+            if df is None:
+                # TickFlow 也失败，使用原始数据
+                pass
+            else:
+                df = normalize_stock_data(df)
         
         # 检查必需的列
         if 'code' not in df.columns or 'name' not in df.columns:
