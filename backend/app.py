@@ -46,6 +46,7 @@ _stock_data_cache = {
     'load_error': None,
     'load_start_time': 0,
 }
+_tencent_enrich_cache = None  # 腾讯API补充缓存
 
 def get_stock_data():
     """获取A股实时数据（带缓存，缓存2小时）
@@ -146,6 +147,7 @@ def _enrich_with_tencent(df):
     """
     用腾讯财经 API 补充 DataFrame 中缺失的 PE/PB/市值/换手率。
     只补充缺失值，不覆盖已有有效数据。
+    结果会缓存，避免重复请求。
     """
     if df is None or df.empty:
         return df
@@ -163,6 +165,15 @@ def _enrich_with_tencent(df):
         print(f"[enrich_tencent] 数据已完整，无需补充")
         return df
 
+    # 检查缓存
+    global _tencent_enrich_cache
+    with _stock_data_lock:
+        if _tencent_enrich_cache is not None:
+            cache_time = _tencent_enrich_cache.get('time', 0)
+            if time.time() - cache_time < 600:  # 缓存10分钟
+                print(f"[enrich_tencent] 使用缓存数据")
+                return df
+
     # 获取代码列表
     code_col = 'code' if 'code' in df.columns else '代码'
     if code_col not in df.columns:
@@ -173,7 +184,6 @@ def _enrich_with_tencent(df):
     codes = [c.replace('sh','').replace('sz','').replace('bj','').replace('.','') for c in codes]
 
     print(f"[enrich_tencent] 需要补充 PE/PB/市值，查询 {len(codes)} 只股票...")
-    import time
     start = time.time()
     tencent_data = _tencent_quote(codes)
     elapsed = time.time() - start
@@ -217,6 +227,11 @@ def _enrich_with_tencent(df):
                 df.at[idx, 'turnover'] = turn_val
 
     print(f"[enrich_tencent] 补充了 {enriched_count} 只股票的 PE 数据")
+
+    # 更新缓存
+    with _stock_data_lock:
+        _tencent_enrich_cache = {'time': time.time()}
+
     return df
 
 
@@ -1047,22 +1062,8 @@ def stock_recommend():
         # 标准化列名
         df = normalize_stock_data(df)
         
-        # 检查数据质量：如果 PE/PB 全为空，说明数据源缺少财务指标
-        # 此时降级到 TickFlow 蓝筹池（有预设的 PE/PB/市值）
-        has_financial = False
-        if 'pe' in df.columns and df['pe'].notna().any():
-            has_financial = True
-        if 'pb' in df.columns and df['pb'].notna().any():
-            has_financial = True
-
-        if not has_financial and strategy in ('value', 'comprehensive'):
-            print(f"[stock_recommend] 数据缺少财务指标(PE/PB)，降级到 TickFlow 蓝筹池")
-            df = _get_tickflow_bluechip_data()
-            if df is None:
-                # TickFlow 也失败，使用原始数据
-                pass
-            else:
-                df = normalize_stock_data(df)
+        # 用腾讯财经 API 补充缺失的 PE/PB/市值（每次请求时检查）
+        df = _enrich_with_tencent(df)
         
         # 检查必需的列
         if 'code' not in df.columns or 'name' not in df.columns:
