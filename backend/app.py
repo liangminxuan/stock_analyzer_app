@@ -370,9 +370,6 @@ def _load_stock_data():
                     print(f"[get_stock_data] TickFlow也失败: {e4}")
 
             if df is not None and not df.empty:
-                # 用腾讯财经 API 补充缺失的 PE/PB/市值
-                df = normalize_stock_data(df)
-                df = _enrich_with_tencent(df)
                 with _stock_data_lock:
                     _stock_data_cache['df'] = df
                     _stock_data_cache['last_update'] = time.time()
@@ -1115,15 +1112,18 @@ def stock_recommend():
         if strategy == 'value':
             # 价值策略：低PE、低PB、大市值
             strategy_desc = "低估值高分红，适合稳健投资"
+            # 排除北交所（920/83开头）
+            if 'code' in filtered_df.columns:
+                filtered_df = filtered_df[~filtered_df['code'].astype(str).str.startswith(('920', '83'))]
             if 'pe' in filtered_df.columns:
-                # 只筛选有有效PE值的股票，NaN保留
-                filtered_df = filtered_df[(filtered_df['pe'].isna()) | (filtered_df['pe'] > 0)]
-                filtered_df = filtered_df[(filtered_df['pe'].isna()) | (filtered_df['pe'] < 20)]
+                # 只保留有有效PE值的股票
+                filtered_df = filtered_df[filtered_df['pe'].notna() & (filtered_df['pe'] > 0)]
+                filtered_df = filtered_df[filtered_df['pe'] < 20]
             if 'pb' in filtered_df.columns:
-                filtered_df = filtered_df[(filtered_df['pb'].isna()) | (filtered_df['pb'] > 0)]
-                filtered_df = filtered_df[(filtered_df['pb'].isna()) | (filtered_df['pb'] < 3)]
+                filtered_df = filtered_df[filtered_df['pb'].notna() & (filtered_df['pb'] > 0)]
+                filtered_df = filtered_df[filtered_df['pb'] < 3]
             if 'market_cap' in filtered_df.columns:
-                filtered_df = filtered_df[(filtered_df['market_cap'].isna()) | (filtered_df['market_cap'] > 100)]
+                filtered_df = filtered_df[filtered_df['market_cap'].notna() & (filtered_df['market_cap'] > 100)]
             # 按PE升序（越低越好）- 有PE的排前面
             if 'pe' in filtered_df.columns:
                 filtered_df = filtered_df.sort_values('pe', ascending=True, na_position='last')
