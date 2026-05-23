@@ -147,91 +147,109 @@ def _enrich_with_tencent(df):
     """
     用腾讯财经 API 补充 DataFrame 中缺失的 PE/PB/市值/换手率。
     只补充缺失值，不覆盖已有有效数据。
-    结果会缓存，避免重复请求。
+    使用全局缓存避免重复请求腾讯API。
     """
+    global _tencent_enrich_cache
+
     if df is None or df.empty:
         return df
 
     # 检查是否需要补充
-    needs_enrich = False
-    if 'pe' in df.columns and df['pe'].notna().sum() < len(df) * 0.5:
-        needs_enrich = True
-    if 'pb' in df.columns and df['pb'].notna().sum() < len(df) * 0.5:
-        needs_enrich = True
-    if 'market_cap' in df.columns and df['market_cap'].notna().sum() < len(df) * 0.5:
-        needs_enrich = True
+    pe_valid = df['pe'].notna().sum() if 'pe' in df.columns else 0
+    pb_valid = df['pb'].notna().sum() if 'pb' in df.columns else 0
+    total = len(df)
 
-    if not needs_enrich:
-        print(f"[enrich_tencent] 数据已完整，无需补充")
+    if pe_valid > total * 0.5 and pb_valid > total * 0.5:
+        print(f"[enrich_tencent] 数据已完整(PE={pe_valid}/{total}, PB={pb_valid}/{total})，无需补充")
         return df
 
-    # 检查缓存
-    global _tencent_enrich_cache
-    with _stock_data_lock:
-        if _tencent_enrich_cache is not None:
-            cache_time = _tencent_enrich_cache.get('time', 0)
-            if time.time() - cache_time < 600:  # 缓存10分钟
-                print(f"[enrich_tencent] 使用缓存数据")
-                return df
+    # 检查缓存：如果之前已经补充过，直接返回
+    if _tencent_enrich_cache is not None:
+        cache_age = time.time() - _tencent_enrich_cache
+        if cache_age < 600:  # 10分钟内不重复补充
+            print(f"[enrich_tencent] 跳过，上次补充于 {cache_age:.0f}s 前")
+            return df
 
     # 获取代码列表
     code_col = 'code' if 'code' in df.columns else '代码'
     if code_col not in df.columns:
+        print(f"[enrich_tencent] 找不到代码列，跳过")
         return df
 
     codes = df[code_col].astype(str).str.strip().tolist()
-    # 清理前缀
     codes = [c.replace('sh','').replace('sz','').replace('bj','').replace('.','') for c in codes]
 
-    print(f"[enrich_tencent] 需要补充 PE/PB/市值，查询 {len(codes)} 只股票...")
-    start = time.time()
-    tencent_data = _tencent_quote(codes)
-    elapsed = time.time() - start
-    print(f"[enrich_tencent] 腾讯 API 返回 {len(tencent_data)} 只, 耗时 {elapsed:.2f}s")
+    print(f"[enrich_tencent] PE有效={pe_valid}/{total}, PB有效={pb_valid}/{total}, 开始补充 {len(codes)} 只...")
 
-    if not tencent_data:
+    # 分批请求腾讯API（每批200只）
+    all_tencent = {}
+    batch_size = 200
+    for i in range(0, len(codes), batch_size):
+        batch = codes[i:i+batch_size]
+        batch_data = _tencent_quote(batch)
+        all_tencent.update(batch_data)
+        if i + batch_size < len(codes):
+            time.sleep(0.1)  # 避免请求过快
+
+    print(f"[enrich_tencent] 腾讯API返回 {len(all_tencent)} 只股票数据")
+
+    if not all_tencent:
+        _tencent_enrich_cache = time.time()  # 记录失败时间，避免频繁重试
         return df
 
     # 补充数据
-    enriched_count = 0
+    enriched_pe = 0
+    enriched_pb = 0
+    enriched_mcap = 0
+
     for idx, row in df.iterrows():
         code = str(row.get(code_col, '')).strip()
         code = code.replace('sh','').replace('sz','').replace('bj','').replace('.','')
-        if code not in tencent_data:
+        if code not in all_tencent:
             continue
-        tq = tencent_data[code]
+        tq = all_tencent[code]
 
-        # PE: 只在缺失或无效时补充
-        if 'pe' in df.columns and (pd.isna(row.get('pe')) or row.get('pe', 0) == 0):
-            pe_val = tq['pe_ttm']
-            if pe_val > 0:  # 只补充正值PE
-                df.at[idx, 'pe'] = pe_val
-                enriched_count += 1
+        # PE
+        if 'pe' in df.columns:
+            cur_pe = row.get('pe')
+            if pd.isna(cur_pe) or cur_pe == 0:
+                pe_val = tq.get('pe_ttm', 0)
+                if pe_val and pe_val > 0:
+                    df.at[idx, 'pe'] = pe_val
+                    enriched_pe += 1
 
         # PB
-        if 'pb' in df.columns and (pd.isna(row.get('pb')) or row.get('pb', 0) == 0):
-            pb_val = tq['pb']
-            if pb_val > 0:
-                df.at[idx, 'pb'] = pb_val
+        if 'pb' in df.columns:
+            cur_pb = row.get('pb')
+            if pd.isna(cur_pb) or cur_pb == 0:
+                pb_val = tq.get('pb', 0)
+                if pb_val and pb_val > 0:
+                    df.at[idx, 'pb'] = pb_val
+                    enriched_pb += 1
 
-        # 市值（腾讯返回的已经是亿元）
-        if 'market_cap' in df.columns and (pd.isna(row.get('market_cap')) or row.get('market_cap', 0) == 0):
-            mcap_val = tq['mcap_yi']
-            if mcap_val > 0:
-                df.at[idx, 'market_cap'] = mcap_val
+        # 市值
+        if 'market_cap' in df.columns:
+            cur_mcap = row.get('market_cap')
+            if pd.isna(cur_mcap) or cur_mcap == 0:
+                mcap_val = tq.get('mcap_yi', 0)
+                if mcap_val and mcap_val > 0:
+                    df.at[idx, 'market_cap'] = mcap_val
+                    enriched_mcap += 1
 
         # 换手率
-        if 'turnover' in df.columns and (pd.isna(row.get('turnover')) or row.get('turnover', 0) == 0):
-            turn_val = tq['turnover_pct']
-            if turn_val > 0:
-                df.at[idx, 'turnover'] = turn_val
+        if 'turnover' in df.columns:
+            cur_turn = row.get('turnover')
+            if pd.isna(cur_turn) or cur_turn == 0:
+                turn_val = tq.get('turnover_pct', 0)
+                if turn_val and turn_val > 0:
+                    df.at[idx, 'turnover'] = turn_val
 
-    print(f"[enrich_tencent] 补充了 {enriched_count} 只股票的 PE 数据")
+    print(f"[enrich_tencent] 补充完成: PE+{enriched_pe}, PB+{enriched_pb}, 市值+{enriched_mcap}")
 
-    # 更新缓存
-    with _stock_data_lock:
-        _tencent_enrich_cache = {'time': time.time()}
+    # 更新缓存时间
+    _tencent_enrich_cache = time.time()
 
+    # 同时更新全局缓存中的df（因为df是引用传递，修改已经生效）
     return df
 
 
@@ -1062,10 +1080,8 @@ def stock_recommend():
         # 标准化列名
         df = normalize_stock_data(df)
         
-        # 用腾讯财经 API 补充缺失的 PE/PB/市值（每次请求时检查）
-        print(f"[stock_screen] 补充前 PE非空: {df['pe'].notna().sum() if 'pe' in df.columns else 'N/A'}")
+        # 用腾讯财经 API 补充缺失的 PE/PB/市值
         df = _enrich_with_tencent(df)
-        print(f"[stock_screen] 补充后 PE非空: {df['pe'].notna().sum() if 'pe' in df.columns else 'N/A'}")
         
         # 检查必需的列
         if 'code' not in df.columns or 'name' not in df.columns:
