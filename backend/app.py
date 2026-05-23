@@ -1063,7 +1063,9 @@ def stock_recommend():
         df = normalize_stock_data(df)
         
         # 用腾讯财经 API 补充缺失的 PE/PB/市值（每次请求时检查）
+        print(f"[stock_screen] 补充前 PE非空: {df['pe'].notna().sum() if 'pe' in df.columns else 'N/A'}")
         df = _enrich_with_tencent(df)
+        print(f"[stock_screen] 补充后 PE非空: {df['pe'].notna().sum() if 'pe' in df.columns else 'N/A'}")
         
         # 检查必需的列
         if 'code' not in df.columns or 'name' not in df.columns:
