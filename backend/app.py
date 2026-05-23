@@ -249,7 +249,11 @@ def _enrich_with_tencent(df):
     # 更新缓存时间
     _tencent_enrich_cache = time.time()
 
-    # 同时更新全局缓存中的df（因为df是引用传递，修改已经生效）
+    # 更新全局缓存中的df（确保后续请求也能用到补充后的数据）
+    with _stock_data_lock:
+        if _stock_data_cache.get('df') is not None:
+            _stock_data_cache['df'] = df
+
     return df
 
 
