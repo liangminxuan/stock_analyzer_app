@@ -424,55 +424,6 @@ def health():
     return jsonify({'status': 'ok', 'time': datetime.now().isoformat()})
 
 
-@app.route('/api/stock/tencent_test')
-def tencent_test():
-    """测试腾讯财经 API 是否可用"""
-    try:
-        test_codes = ["000001", "600036", "601318", "600519", "300750"]
-        data = _tencent_quote(test_codes)
-        return jsonify({
-            'success': True,
-            'count': len(data),
-            'data': data,
-            'cache_status': _tencent_enrich_cache,
-        })
-    except Exception as e:
-        return jsonify({'success': False, 'error': str(e)})
-
-
-@app.route('/api/stock/enrich_test')
-def enrich_test():
-    """测试腾讯补充功能"""
-    try:
-        df = get_stock_data()
-        if df is None:
-            return jsonify({'success': False, 'error': '无数据'})
-        df = normalize_stock_data(df)
-        pe_before = df['pe'].notna().sum() if 'pe' in df.columns else 0
-        pb_before = df['pb'].notna().sum() if 'pb' in df.columns else 0
-        code_col = 'code' if 'code' in df.columns else '代码'
-        sample_codes = df[code_col].astype(str).head(5).tolist()
-        
-        df = _enrich_with_tencent(df)
-        
-        pe_after = df['pe'].notna().sum() if 'pe' in df.columns else 0
-        pb_after = df['pb'].notna().sum() if 'pb' in df.columns else 0
-        
-        return jsonify({
-            'success': True,
-            'total_rows': len(df),
-            'pe_before': int(pe_before),
-            'pe_after': int(pe_after),
-            'pb_before': int(pb_before),
-            'pb_after': int(pb_after),
-            'sample_codes': sample_codes,
-            'cache_status': _tencent_enrich_cache,
-        })
-    except Exception as e:
-        import traceback
-        return jsonify({'success': False, 'error': str(e), 'traceback': traceback.format_exc()[-500:]})
-
-
 @app.route('/api/stock/data_status', methods=['GET'])
 def stock_data_status():
     """检查股票数据缓存状态"""
