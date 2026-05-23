@@ -942,6 +942,9 @@ def stock_screen():
         # 标准化列名
         df = normalize_stock_data(df)
         
+        # 用腾讯财经 API 补充缺失的 PE/PB/市值
+        df = _enrich_with_tencent(df)
+        
         # 检查必需的列
         required_cols = ['code', 'name']
         for col in required_cols:
