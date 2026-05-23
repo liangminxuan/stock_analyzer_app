@@ -83,6 +83,169 @@ def get_stock_data():
         return None
 
 
+# ==================== 腾讯财经 API ====================
+
+def _tencent_quote(codes):
+    """
+    腾讯财经实时行情 API（HTTP GET, GBK编码, ~分隔88字段）
+    参考: https://github.com/simonlin1212/a-stock-data
+    字段: 1=名称, 3=现价, 4=昨收, 32=涨跌幅%, 38=换手率%, 39=PE_TTM, 44=总市值亿, 46=PB
+    不封IP，海外可用，批量请求一次可查多只。
+    """
+    if not codes:
+        return {}
+    prefixed = []
+    for c in codes:
+        c = str(c).strip()
+        # 清理已有前缀
+        c = c.replace('sh', '').replace('sz', '').replace('bj', '').replace('.', '')
+        if c.startswith(("6", "9")):
+            prefixed.append(f"sh{c}")
+        elif c.startswith("8"):
+            prefixed.append(f"bj{c}")
+        else:
+            prefixed.append(f"sz{c}")
+
+    # 腾讯 API 单次最多约 50 只，分批请求
+    all_results = {}
+    batch_size = 50
+    for i in range(0, len(prefixed), batch_size):
+        batch = prefixed[i:i+batch_size]
+        try:
+            url = "https://qt.gtimg.cn/q=" + ",".join(batch)
+            req = urllib.request.Request(url)
+            req.add_header("User-Agent", "Mozilla/5.0")
+            resp = urllib.request.urlopen(req, timeout=15)
+            data = resp.read().decode("gbk")
+
+            for line in data.strip().split(";"):
+                if not line.strip() or "=" not in line or '"' not in line:
+                    continue
+                key = line.split("=")[0].split("_")[-1]
+                vals = line.split('"')[1].split("~")
+                if len(vals) < 53:
+                    continue
+                code = key[2:]
+                all_results[code] = {
+                    "name":         vals[1],
+                    "price":        float(vals[3]) if vals[3] else 0,
+                    "last_close":   float(vals[4]) if vals[4] else 0,
+                    "change_pct":   float(vals[32]) if vals[32] else 0,
+                    "turnover_pct": float(vals[38]) if vals[38] else 0,
+                    "pe_ttm":       float(vals[39]) if vals[39] else 0,
+                    "mcap_yi":      float(vals[44]) if vals[44] else 0,
+                    "pb":           float(vals[46]) if vals[46] else 0,
+                }
+        except Exception as e:
+            print(f"[tencent_quote] 批次请求失败: {e}")
+
+    return all_results
+
+
+def _enrich_with_tencent(df):
+    """
+    用腾讯财经 API 补充 DataFrame 中缺失的 PE/PB/市值/换手率。
+    只补充缺失值，不覆盖已有有效数据。
+    """
+    if df is None or df.empty:
+        return df
+
+    # 检查是否需要补充
+    needs_enrich = False
+    if 'pe' in df.columns and df['pe'].notna().sum() < len(df) * 0.5:
+        needs_enrich = True
+    if 'pb' in df.columns and df['pb'].notna().sum() < len(df) * 0.5:
+        needs_enrich = True
+    if 'market_cap' in df.columns and df['market_cap'].notna().sum() < len(df) * 0.5:
+        needs_enrich = True
+
+    if not needs_enrich:
+        print(f"[enrich_tencent] 数据已完整，无需补充")
+        return df
+
+    # 获取代码列表
+    code_col = 'code' if 'code' in df.columns else '代码'
+    if code_col not in df.columns:
+        return df
+
+    codes = df[code_col].astype(str).str.strip().tolist()
+    # 清理前缀
+    codes = [c.replace('sh','').replace('sz','').replace('bj','').replace('.','') for c in codes]
+
+    print(f"[enrich_tencent] 需要补充 PE/PB/市值，查询 {len(codes)} 只股票...")
+    import time
+    start = time.time()
+    tencent_data = _tencent_quote(codes)
+    elapsed = time.time() - start
+    print(f"[enrich_tencent] 腾讯 API 返回 {len(tencent_data)} 只, 耗时 {elapsed:.2f}s")
+
+    if not tencent_data:
+        return df
+
+    # 补充数据
+    enriched_count = 0
+    for idx, row in df.iterrows():
+        code = str(row.get(code_col, '')).strip()
+        code = code.replace('sh','').replace('sz','').replace('bj','').replace('.','')
+        if code not in tencent_data:
+            continue
+        tq = tencent_data[code]
+
+        # PE: 只在缺失或无效时补充
+        if 'pe' in df.columns and (pd.isna(row.get('pe')) or row.get('pe', 0) == 0):
+            pe_val = tq['pe_ttm']
+            if pe_val > 0:  # 只补充正值PE
+                df.at[idx, 'pe'] = pe_val
+                enriched_count += 1
+
+        # PB
+        if 'pb' in df.columns and (pd.isna(row.get('pb')) or row.get('pb', 0) == 0):
+            pb_val = tq['pb']
+            if pb_val > 0:
+                df.at[idx, 'pb'] = pb_val
+
+        # 市值（腾讯返回的已经是亿元）
+        if 'market_cap' in df.columns and (pd.isna(row.get('market_cap')) or row.get('market_cap', 0) == 0):
+            mcap_val = tq['mcap_yi']
+            if mcap_val > 0:
+                df.at[idx, 'market_cap'] = mcap_val
+
+        # 换手率
+        if 'turnover' in df.columns and (pd.isna(row.get('turnover')) or row.get('turnover', 0) == 0):
+            turn_val = tq['turnover_pct']
+            if turn_val > 0:
+                df.at[idx, 'turnover'] = turn_val
+
+    print(f"[enrich_tencent] 补充了 {enriched_count} 只股票的 PE 数据")
+    return df
+
+
+# ==================== 蓝筹池常量（消除重复定义）====================
+
+BLUECHIP_POOL = {
+    '000001': {'name': '平安银行', 'pe': 6.5, 'pb': 0.6, 'cap': 2000},
+    '000002': {'name': '万科A', 'pe': 8.0, 'pb': 0.8, 'cap': 1500},
+    '600036': {'name': '招商银行', 'pe': 5.5, 'pb': 0.7, 'cap': 8000},
+    '601318': {'name': '中国平安', 'pe': 8.5, 'pb': 1.0, 'cap': 8000},
+    '600519': {'name': '贵州茅台', 'pe': 25.0, 'pb': 8.0, 'cap': 18000},
+    '000858': {'name': '五粮液', 'pe': 20.0, 'pb': 5.0, 'cap': 5000},
+    '002594': {'name': '比亚迪', 'pe': 30.0, 'pb': 6.0, 'cap': 7000},
+    '300750': {'name': '宁德时代', 'pe': 35.0, 'pb': 5.5, 'cap': 7000},
+    '601398': {'name': '工商银行', 'pe': 4.5, 'pb': 0.5, 'cap': 18000},
+    '601288': {'name': '农业银行', 'pe': 4.0, 'pb': 0.4, 'cap': 14000},
+    '600900': {'name': '长江电力', 'pe': 18.0, 'pb': 3.5, 'cap': 5000},
+    '601888': {'name': '中国中免', 'pe': 28.0, 'pb': 4.5, 'cap': 3000},
+    '000333': {'name': '美的集团', 'pe': 12.0, 'pb': 3.0, 'cap': 5000},
+    '002415': {'name': '海康威视', 'pe': 22.0, 'pb': 4.0, 'cap': 3500},
+    '300059': {'name': '东方财富', 'pe': 30.0, 'pb': 5.0, 'cap': 2500},
+    '600276': {'name': '恒瑞医药', 'pe': 40.0, 'pb': 6.5, 'cap': 3000},
+    '000568': {'name': '泸州老窖', 'pe': 18.0, 'pb': 5.5, 'cap': 2500},
+    '002304': {'name': '洋河股份', 'pe': 15.0, 'pb': 2.5, 'cap': 2000},
+    '601166': {'name': '兴业银行', 'pe': 5.0, 'pb': 0.6, 'cap': 4000},
+    '600887': {'name': '伊利股份', 'pe': 16.0, 'pb': 3.5, 'cap': 2000},
+}
+
+
 def _load_stock_data():
     """实际执行数据加载（在后台线程中运行），最多重试2次"""
     try:
@@ -137,37 +300,13 @@ def _load_stock_data():
                     errors.append(f"新浪: {str(e3)[:100]}")
                     print(f"[get_stock_data] 新浪接口也失败: {e3}")
 
-            # 尝试4: TickFlow 免费层 + 预设蓝筹池
+            # 尝试4: TickFlow 免费层 + 蓝筹池
             if df is None:
                 try:
                     from tickflow import TickFlow
                     tf = TickFlow.free()
-                    # 预设蓝筹股池（代码映射到 TickFlow 格式）
-                    preset_map = {
-                        '000001': {'name': '平安银行', 'pe': 6.5, 'pb': 0.6, 'cap': 2000},
-                        '000002': {'name': '万科A', 'pe': 8.0, 'pb': 0.8, 'cap': 1500},
-                        '600036': {'name': '招商银行', 'pe': 5.5, 'pb': 0.7, 'cap': 8000},
-                        '601318': {'name': '中国平安', 'pe': 8.5, 'pb': 1.0, 'cap': 8000},
-                        '600519': {'name': '贵州茅台', 'pe': 25.0, 'pb': 8.0, 'cap': 18000},
-                        '000858': {'name': '五粮液', 'pe': 20.0, 'pb': 5.0, 'cap': 5000},
-                        '002594': {'name': '比亚迪', 'pe': 30.0, 'pb': 6.0, 'cap': 7000},
-                        '300750': {'name': '宁德时代', 'pe': 35.0, 'pb': 5.5, 'cap': 7000},
-                        '601398': {'name': '工商银行', 'pe': 4.5, 'pb': 0.5, 'cap': 18000},
-                        '601288': {'name': '农业银行', 'pe': 4.0, 'pb': 0.4, 'cap': 14000},
-                        '600900': {'name': '长江电力', 'pe': 18.0, 'pb': 3.5, 'cap': 5000},
-                        '601888': {'name': '中国中免', 'pe': 28.0, 'pb': 4.5, 'cap': 3000},
-                        '000333': {'name': '美的集团', 'pe': 12.0, 'pb': 3.0, 'cap': 5000},
-                        '002415': {'name': '海康威视', 'pe': 22.0, 'pb': 4.0, 'cap': 3500},
-                        '300059': {'name': '东方财富', 'pe': 30.0, 'pb': 5.0, 'cap': 2500},
-                        '600276': {'name': '恒瑞医药', 'pe': 40.0, 'pb': 6.5, 'cap': 3000},
-                        '000568': {'name': '泸州老窖', 'pe': 18.0, 'pb': 5.5, 'cap': 2500},
-                        '002304': {'name': '洋河股份', 'pe': 15.0, 'pb': 2.5, 'cap': 2000},
-                        '601166': {'name': '兴业银行', 'pe': 5.0, 'pb': 0.6, 'cap': 4000},
-                        '600887': {'name': '伊利股份', 'pe': 16.0, 'pb': 3.5, 'cap': 2000},
-                    }
                     rows = []
-                    for code, info in preset_map.items():
-                        # 判断交易所
+                    for code, info in BLUECHIP_POOL.items():
                         tf_code = f"{code}.SZ" if code.startswith(('0', '3')) else f"{code}.SH"
                         try:
                             kdf = tf.klines.get(tf_code, period="1d", as_dataframe=True)
@@ -179,34 +318,28 @@ def _load_stock_data():
                                 pct_chg = round((close - prev_close) / prev_close * 100, 2)
                                 name = str(latest.get('name', info['name']))
                                 rows.append({
-                                    '代码': code,
-                                    '名称': name,
-                                    '最新价': close,
-                                    '涨跌幅': pct_chg,
-                                    '市盈率-动态': info['pe'],
-                                    '市净率': info['pb'],
-                                    '总市值': info['cap'],  # 亿元
+                                    '代码': code, '名称': name, '最新价': close,
+                                    '涨跌幅': pct_chg, '市盈率-动态': info['pe'],
+                                    '市净率': info['pb'], '总市值': info['cap'],
                                     '换手率': None,
                                 })
-                        except Exception as e:
-                            # TickFlow 单只失败，用预设价格
+                        except Exception:
                             rows.append({
-                                '代码': code,
-                                '名称': info['name'],
-                                '最新价': 0,
-                                '涨跌幅': 0,
-                                '市盈率-动态': info['pe'],
-                                '市净率': info['pb'],
-                                '总市值': info['cap'],
+                                '代码': code, '名称': info['name'], '最新价': 0,
+                                '涨跌幅': 0, '市盈率-动态': info['pe'],
+                                '市净率': info['pb'], '总市值': info['cap'],
                                 '换手率': None,
                             })
                     df = pd.DataFrame(rows)
-                    print(f"[get_stock_data] TickFlow+预设池成功, {len(df)} 行, 耗时 {time.time()-start:.1f}s")
+                    print(f"[get_stock_data] TickFlow+蓝筹池成功, {len(df)} 行, 耗时 {time.time()-start:.1f}s")
                 except Exception as e4:
                     errors.append(f"TickFlow: {str(e4)[:100]}")
                     print(f"[get_stock_data] TickFlow也失败: {e4}")
 
             if df is not None and not df.empty:
+                # 用腾讯财经 API 补充缺失的 PE/PB/市值
+                df = normalize_stock_data(df)
+                df = _enrich_with_tencent(df)
                 with _stock_data_lock:
                     _stock_data_cache['df'] = df
                     _stock_data_cache['last_update'] = time.time()
@@ -626,30 +759,8 @@ def _get_tickflow_bluechip_data():
     try:
         from tickflow import TickFlow
         tf = TickFlow.free()
-        preset_map = {
-            '000001': {'name': '平安银行', 'pe': 6.5, 'pb': 0.6, 'cap': 2000},
-            '000002': {'name': '万科A', 'pe': 8.0, 'pb': 0.8, 'cap': 1500},
-            '600036': {'name': '招商银行', 'pe': 5.5, 'pb': 0.7, 'cap': 8000},
-            '601318': {'name': '中国平安', 'pe': 8.5, 'pb': 1.0, 'cap': 8000},
-            '600519': {'name': '贵州茅台', 'pe': 25.0, 'pb': 8.0, 'cap': 18000},
-            '000858': {'name': '五粮液', 'pe': 20.0, 'pb': 5.0, 'cap': 5000},
-            '002594': {'name': '比亚迪', 'pe': 30.0, 'pb': 6.0, 'cap': 7000},
-            '300750': {'name': '宁德时代', 'pe': 35.0, 'pb': 5.5, 'cap': 7000},
-            '601398': {'name': '工商银行', 'pe': 4.5, 'pb': 0.5, 'cap': 18000},
-            '601288': {'name': '农业银行', 'pe': 4.0, 'pb': 0.4, 'cap': 14000},
-            '600900': {'name': '长江电力', 'pe': 18.0, 'pb': 3.5, 'cap': 5000},
-            '601888': {'name': '中国中免', 'pe': 28.0, 'pb': 4.5, 'cap': 3000},
-            '000333': {'name': '美的集团', 'pe': 12.0, 'pb': 3.0, 'cap': 5000},
-            '002415': {'name': '海康威视', 'pe': 22.0, 'pb': 4.0, 'cap': 3500},
-            '300059': {'name': '东方财富', 'pe': 30.0, 'pb': 5.0, 'cap': 2500},
-            '600276': {'name': '恒瑞医药', 'pe': 40.0, 'pb': 6.5, 'cap': 3000},
-            '000568': {'name': '泸州老窖', 'pe': 18.0, 'pb': 5.5, 'cap': 2500},
-            '002304': {'name': '洋河股份', 'pe': 15.0, 'pb': 2.5, 'cap': 2000},
-            '601166': {'name': '兴业银行', 'pe': 5.0, 'pb': 0.6, 'cap': 4000},
-            '600887': {'name': '伊利股份', 'pe': 16.0, 'pb': 3.5, 'cap': 2000},
-        }
         rows = []
-        for code, info in preset_map.items():
+        for code, info in BLUECHIP_POOL.items():
             tf_code = f"{code}.SZ" if code.startswith(('0', '3')) else f"{code}.SH"
             try:
                 kdf = tf.klines.get(tf_code, period="1d", as_dataframe=True)
@@ -819,6 +930,13 @@ def stock_screen():
             if df['market_cap'].max() > 100000:
                 df['market_cap'] = df['market_cap'] / 100000000  # 转为亿
 
+        # 数据清洗：过滤停牌股票（价格为0或NaN），但保留新股（首日无昨收）
+        if 'price' in df.columns:
+            before_count = len(df)
+            df = df[df['price'].notna() & (df['price'] > 0)]
+            if len(df) < before_count:
+                print(f"[stock_screen] 过滤了 {before_count - len(df)} 只停牌/无效股票")
+
         # 应用筛选条件
         if pe_min is not None and 'pe' in df.columns:
             df = df[df['pe'] >= pe_min]
@@ -961,6 +1079,13 @@ def stock_recommend():
             if df['market_cap'].max() > 100000:
                 df['market_cap'] = df['market_cap'] / 100000000  # 转为亿
 
+        # 数据清洗：过滤停牌股票（价格为0或NaN），保留新股
+        if 'price' in df.columns:
+            before_count = len(df)
+            df = df[df['price'].notna() & (df['price'] > 0)]
+            if len(df) < before_count:
+                print(f"[stock_recommend] 过滤了 {before_count - len(df)} 只停牌/无效股票")
+
         # 根据策略筛选
         filtered_df = df.copy()
         strategy_desc = ""
@@ -1019,11 +1144,41 @@ def stock_recommend():
                 filtered_df = filtered_df[(filtered_df['market_cap'].isna()) | (filtered_df['market_cap'] > 50)]
             if 'change_percent' in filtered_df.columns:
                 filtered_df = filtered_df[filtered_df['change_percent'] > -3]
-            # 综合排序（优先使用涨跌幅，因为PE/PB可能为NaN）
-            if 'change_percent' in filtered_df.columns:
-                filtered_df = filtered_df.sort_values('change_percent', ascending=False)
-            elif 'pe' in filtered_df.columns:
-                filtered_df = filtered_df.sort_values('pe', ascending=True, na_position='last')
+
+            # 多因子综合评分
+            def _composite_score(row):
+                score = 50  # 基础分
+                # PE 评分（越低越好，5-50分）
+                pe = row.get('pe')
+                if pd.notna(pe) and pe > 0:
+                    score += max(0, 15 - pe / 5)  # PE=5得15分, PE=50得5分
+                # PB 评分（越低越好）
+                pb = row.get('pb')
+                if pd.notna(pb) and pb > 0:
+                    score += max(0, 10 - pb * 2)  # PB=0.5得9分, PB=5得0分
+                # 市值评分（大市值加分）
+                mcap = row.get('market_cap')
+                if pd.notna(mcap) and mcap > 0:
+                    if mcap > 1000:
+                        score += 5  # 大盘股加分
+                # 涨幅评分（正涨幅加分，避免大跌股）
+                chg = row.get('change_percent')
+                if pd.notna(chg):
+                    if 0 < chg < 5:
+                        score += 10  # 温和上涨最优
+                    elif chg >= 5:
+                        score += 5  # 涨幅过大适度加分
+                    elif chg < -2:
+                        score -= 5  # 下跌扣分
+                # 换手率评分（适度活跃）
+                turn = row.get('turnover')
+                if pd.notna(turn) and turn > 0:
+                    if 1 < turn < 10:
+                        score += 5  # 适度换手
+                return score
+
+            filtered_df['_score'] = filtered_df.apply(_composite_score, axis=1)
+            filtered_df = filtered_df.sort_values('_score', ascending=False)
 
         # 取前N个
         result_df = filtered_df.head(count)
