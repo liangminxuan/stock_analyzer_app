@@ -114,10 +114,10 @@ def _tencent_quote(codes):
         batch = prefixed[i:i+batch_size]
         try:
             url = "https://qt.gtimg.cn/q=" + ",".join(batch)
-            req = urllib.request.Request(url)
-            req.add_header("User-Agent", "Mozilla/5.0")
-            resp = urllib.request.urlopen(req, timeout=15)
-            data = resp.read().decode("gbk")
+            # 使用 requests 而非 urllib（Render 环境兼容性更好）
+            import requests as req_lib
+            resp = req_lib.get(url, timeout=15, headers={"User-Agent": "Mozilla/5.0"})
+            data = resp.content.decode("gbk")
 
             for line in data.strip().split(";"):
                 if not line.strip() or "=" not in line or '"' not in line:
