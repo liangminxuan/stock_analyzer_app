@@ -72,6 +72,11 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
           // AI选股卡片
           _buildAIPickerCard(),
 
+          SizedBox(height: 16.h),
+
+          // AI 对冲基金分析入口
+          _buildAIHedgeFundCard(),
+
           SizedBox(height: 24.h),
 
           // 选择策略
@@ -247,6 +252,95 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
             ],
           ),
         ],
+      ),
+    );
+  }
+
+  /// 构建AI对冲基金分析入口卡片
+  Widget _buildAIHedgeFundCard() {
+    return GestureDetector(
+      onTap: () {
+        Navigator.pushNamed(context, Routes.aiAnalysis);
+      },
+      child: Container(
+        padding: EdgeInsets.all(16.w),
+        decoration: BoxDecoration(
+          gradient: const LinearGradient(
+            colors: [Color(0xFF1A1A2E), Color(0xFF16213E)],
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+          ),
+          borderRadius: BorderRadius.circular(16.r),
+          border: Border.all(
+            color: const Color(0xFFE2B714).withOpacity(0.3),
+          ),
+        ),
+        child: Row(
+          children: [
+            Container(
+              width: 48.w,
+              height: 48.w,
+              decoration: BoxDecoration(
+                color: const Color(0xFFE2B714).withOpacity(0.2),
+                borderRadius: BorderRadius.circular(12.r),
+              ),
+              child: Icon(
+                Icons.psychology,
+                color: const Color(0xFFE2B714),
+                size: 28.sp,
+              ),
+            ),
+            SizedBox(width: 16.w),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Text(
+                        'AI 对冲基金分析',
+                        style: TextStyle(
+                          fontSize: 17.sp,
+                          fontWeight: FontWeight.bold,
+                          color: Colors.white,
+                        ),
+                      ),
+                      SizedBox(width: 8.w),
+                      Container(
+                        padding: EdgeInsets.symmetric(horizontal: 6.w, vertical: 2.h),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFE2B714).withOpacity(0.2),
+                          borderRadius: BorderRadius.circular(4.r),
+                        ),
+                        child: Text(
+                          '量化',
+                          style: TextStyle(
+                            fontSize: 10.sp,
+                            color: const Color(0xFFE2B714),
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                  SizedBox(height: 4.h),
+                  Text(
+                    '趋势·均值回归·动量·波动率·统计套利',
+                    style: TextStyle(
+                      fontSize: 12.sp,
+                      color: Colors.white.withOpacity(0.6),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            Icon(
+              Icons.chevron_right,
+              color: Colors.white.withOpacity(0.5),
+              size: 24.sp,
+            ),
+          ],
+        ),
       ),
     );
   }

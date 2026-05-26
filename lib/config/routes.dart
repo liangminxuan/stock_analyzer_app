@@ -7,6 +7,7 @@ import '../screens/market/search_screen.dart';
 import '../screens/finance/finance_screen.dart';
 import '../screens/news/news_screen.dart';
 import '../screens/discovery/discovery_screen.dart';
+import '../screens/discovery/ai_analysis_screen.dart';
 
 /// 路由配置
 class Routes {
@@ -18,6 +19,7 @@ class Routes {
   static const String finance = '/finance';
   static const String news = '/news';
   static const String discovery = '/discovery';
+  static const String aiAnalysis = '/ai_analysis';
 
   static Route<dynamic> generateRoute(RouteSettings settings) {
     switch (settings.name) {
@@ -63,6 +65,11 @@ class Routes {
       case discovery:
         return MaterialPageRoute(
           builder: (_) => const DiscoveryScreen(),
+        );
+
+      case aiAnalysis:
+        return MaterialPageRoute(
+          builder: (_) => const AIAnalysisScreen(),
         );
 
       default:

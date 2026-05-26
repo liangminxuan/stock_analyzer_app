@@ -14,6 +14,7 @@ import traceback
 import pandas as pd
 import time
 import threading
+from ai_engine import full_ai_analysis, calculate_technical_signals, calculate_risk_metrics
 
 app = Flask(__name__)
 CORS(app)
@@ -1427,6 +1428,46 @@ def generate_announcement_interpretation(title, content, stock_name):
             interpretation['key_points'].append(f'涉及比例：{percents[0]}%')
     
     return interpretation
+
+
+@app.route('/api/stock/ai_analysis')
+def ai_analysis():
+    code = request.args.get('code', '')
+    if not code:
+        return jsonify({'success': False, 'error': '请提供股票代码'})
+
+    try:
+        import akshare as ak
+        # 获取日K线数据
+        prefix = 'sh' if code.startswith(('6', '9')) else ('bj' if code.startswith('8') else 'sz')
+        df = ak.stock_zh_a_hist(symbol=code, period="daily", start_date="20250101", end_date="20260526", adjust="qfq")
+
+        # 重命名列
+        df = df.rename(columns={
+            '日期': 'date', '开盘': 'open', '收盘': 'close',
+            '最高': 'high', '最低': 'low', '成交量': 'volume'
+        })
+        df = df[['date', 'open', 'high', 'low', 'close', 'volume']].sort_values('date')
+
+        # 获取基本面数据（使用腾讯API）
+        from ai_engine import _tencent_quote
+        tencent_data = _tencent_quote([code])
+        tq = tencent_data.get(code, {})
+
+        metrics = {
+            'pe': tq.get('pe_ttm', 0) or 0,
+            'pb': tq.get('pb', 0) or 0,
+        }
+
+        # 调用AI分析引擎
+        result = full_ai_analysis(df, metrics if any(metrics.values()) else None)
+        result['success'] = True
+        result['code'] = code
+        result['name'] = tq.get('name', '')
+        return jsonify(result)
+    except Exception as e:
+        import traceback
+        return jsonify({'success': False, 'error': str(e), 'traceback': traceback.format_exc()[-500:]})
 
 
 if __name__ == '__main__':
