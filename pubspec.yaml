@@ -17,6 +17,7 @@ dependencies:
 
   # 状态管理
   provider: ^6.1.1
+  get: ^4.6.6
 
   # 图表
   fl_chart: ^0.66.0
