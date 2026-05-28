@@ -6,68 +6,74 @@ import '../../services/backend_service.dart';
 
 /// AI 对冲基金选股分析页面
 /// 基于 virattt/ai-hedge-fund 项目的策略
-class AIAnalysisScreen extends GetView<AIAnalysisController> {
+class AIAnalysisScreen extends StatelessWidget {
   const AIAnalysisScreen({super.key});
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        title: Text(
-          'AI 对冲基金分析',
-          style: TextStyle(fontSize: 20.sp, fontWeight: FontWeight.bold),
-        ),
-      ),
-      body: Obx(() {
-        if (controller.isLoading.value) {
-          return Center(
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                const CircularProgressIndicator(),
-                SizedBox(height: 16.h),
-                Text(
-                  controller.loadingMessage.value,
-                  style: TextStyle(fontSize: 14.sp, color: Colors.grey[600]),
-                ),
-              ],
+    // 确保控制器已注册
+    return GetBuilder<AIAnalysisController>(
+      init: AIAnalysisController(),
+      builder: (controller) {
+        return Scaffold(
+          appBar: AppBar(
+            title: Text(
+              'AI 对冲基金分析',
+              style: TextStyle(fontSize: 20.sp, fontWeight: FontWeight.bold),
             ),
-          );
-        }
-
-        if (controller.hasError.value) {
-          return Center(
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Icon(Icons.error_outline, size: 64.sp, color: Colors.grey),
-                SizedBox(height: 16.h),
-                Text(
-                  controller.errorMessage.value,
-                  style: TextStyle(color: Colors.grey, fontSize: 14.sp),
-                  textAlign: TextAlign.center,
+          ),
+          body: Obx(() {
+            if (controller.isLoading.value) {
+              return Center(
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    const CircularProgressIndicator(),
+                    SizedBox(height: 16.h),
+                    Text(
+                      controller.loadingMessage.value,
+                      style: TextStyle(fontSize: 14.sp, color: Colors.grey[600]),
+                    ),
+                  ],
                 ),
-                SizedBox(height: 16.h),
-                ElevatedButton(
-                  onPressed: () => controller.startAnalysis(),
-                  child: const Text('重试'),
+              );
+            }
+
+            if (controller.hasError.value) {
+              return Center(
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Icon(Icons.error_outline, size: 64.sp, color: Colors.grey),
+                    SizedBox(height: 16.h),
+                    Text(
+                      controller.errorMessage.value,
+                      style: TextStyle(color: Colors.grey, fontSize: 14.sp),
+                      textAlign: TextAlign.center,
+                    ),
+                    SizedBox(height: 16.h),
+                    ElevatedButton(
+                      onPressed: () => controller.startAnalysis(),
+                      child: const Text('重试'),
+                    ),
+                  ],
                 ),
-              ],
-            ),
-          );
-        }
+              );
+            }
 
-        if (controller.analysisData.value == null) {
-          return _buildInputView(context);
-        }
+            if (controller.analysisData.value == null) {
+              return _buildInputView(context, controller);
+            }
 
-        return _buildResultView(context);
-      }),
+            return _buildResultView(context, controller);
+          }),
+        );
+      },
     );
   }
 
   /// 输入视图
-  Widget _buildInputView(BuildContext context) {
+  Widget _buildInputView(BuildContext context, AIAnalysisController controller) {
     return SingleChildScrollView(
       padding: EdgeInsets.all(16.w),
       child: Column(
@@ -301,7 +307,7 @@ class AIAnalysisScreen extends GetView<AIAnalysisController> {
   }
 
   /// 结果视图
-  Widget _buildResultView(BuildContext context) {
+  Widget _buildResultView(BuildContext context, AIAnalysisController controller) {
     final data = controller.analysisData.value!;
 
     return SingleChildScrollView(
