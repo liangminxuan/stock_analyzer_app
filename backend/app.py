@@ -1437,55 +1437,46 @@ def ai_analysis():
         return jsonify({'success': False, 'error': '请提供股票代码'})
 
     try:
-        import akshare as ak
         from datetime import datetime, timedelta
-        import time
+        import requests as req_lib
 
-        # 动态日期范围：最近 18 个月
+        # ====== 使用腾讯财经K线API（与前端K线分析同源，稳定可靠） ======
+        secid = f'sh{code}' if code.startswith(('6', '9')) else ('bj' if code.startswith('8') else f'sz{code}')
         end_dt = datetime.now()
         start_dt = end_dt - timedelta(days=540)
-        start_date = start_dt.strftime('%Y%m%d')
-        end_date = end_dt.strftime('%Y%m%d')
+        start_str = start_dt.strftime('%Y-%m-%d')
+        end_str = end_dt.strftime('%Y-%m-%d')
 
-        # 获取日K线数据（带重试机制）
-        df = None
-        last_error = None
-        for attempt in range(3):
-            try:
-                print(f'[ai_analysis] 尝试获取 {code} K线数据 (第{attempt+1}次)')
-                # 使用 timeout 参数避免长时间挂起
-                df = ak.stock_zh_a_hist(symbol=code, period="daily", start_date=start_date, end_date=end_date, adjust="qfq")
-                if df is not None and not df.empty:
-                    print(f'[ai_analysis] 成功获取 {code} K线数据，共 {len(df)} 条')
-                    break
-            except Exception as e:
-                last_error = str(e)
-                print(f'[ai_analysis] 第{attempt+1}次尝试失败: {last_error[:100]}')
-                if attempt < 2:
-                    time.sleep(2 ** attempt)  # 指数退避: 1s, 2s
+        kline_url = f'https://web.ifzq.gtimg.cn/appstock/app/fqkline/get?param={secid},day,{start_str},{end_str},300,qfq'
+        print(f'[ai_analysis] 请求腾讯K线: {code}')
 
-        if df is None or df.empty:
-            error_msg = f'未获取到 {code} 的K线数据'
-            if last_error:
-                error_msg += f'，原因: {last_error[:100]}'
-            return jsonify({'success': False, 'error': error_msg})
+        resp = req_lib.get(kline_url, timeout=15, headers={'User-Agent': 'Mozilla/5.0'})
+        resp.raise_for_status()
+        resp_data = resp.json()
+
+        klines = resp_data.get('data', {}).get(secid, {}).get('qfqday', [])
+        if not klines:
+            return jsonify({'success': False, 'error': f'未获取到 {code} 的K线数据，请确认股票代码是否正确'})
+
+        # 解析K线数据为 DataFrame
+        # 格式: ['日期', '开盘', '收盘', '最高', '最低', '成交量']
+        rows = []
+        for k in klines:
+            rows.append({
+                'date': k[0],
+                'open': float(k[1]),
+                'close': float(k[2]),
+                'high': float(k[3]),
+                'low': float(k[4]),
+                'volume': int(float(k[5]))
+            })
+        df = pd.DataFrame(rows)
+        print(f'[ai_analysis] 成功获取 {code} K线数据，共 {len(df)} 条')
 
         if len(df) < 30:
             return jsonify({'success': False, 'error': f'{code} 的K线数据不足（仅 {len(df)} 条），需要至少30条数据'})
 
-        # 重命名列
-        df = df.rename(columns={
-            '日期': 'date', '开盘': 'open', '收盘': 'close',
-            '最高': 'high', '最低': 'low', '成交量': 'volume'
-        })
-
-        # 确保列存在
-        required_cols = ['date', 'open', 'high', 'low', 'close', 'volume']
-        missing = [c for c in required_cols if c not in df.columns]
-        if missing:
-            return jsonify({'success': False, 'error': f'K线数据缺少必要列: {missing}'})
-
-        df = df[required_cols].sort_values('date').reset_index(drop=True)
+        df = df.sort_values('date').reset_index(drop=True)
 
         # 获取基本面数据（使用腾讯API），失败不影响分析
         tq = {}
