@@ -6,6 +6,7 @@ import '../../services/backend_service.dart';
 
 /// AI 对冲基金选股分析页面
 /// 基于 virattt/ai-hedge-fund 项目的策略
+/// 使用 GetX 状态管理
 class AIAnalysisScreen extends StatelessWidget {
   const AIAnalysisScreen({super.key});
 
