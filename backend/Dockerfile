@@ -14,6 +14,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 # 复制代码
 COPY app.py .
+COPY ai_engine.py .
 
 # 暴露端口
 EXPOSE 5000
