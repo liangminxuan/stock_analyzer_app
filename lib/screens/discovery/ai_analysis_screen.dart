@@ -90,11 +90,11 @@ class AIAnalysisScreen extends StatelessWidget {
             style: TextStyle(fontSize: 18.sp, fontWeight: FontWeight.bold),
           ),
           SizedBox(height: 12.h),
-          _buildStockInput(context),
+          _buildStockInput(context, controller),
           SizedBox(height: 24.h),
 
           // 开始分析按钮
-          _buildStartButton(context),
+          _buildStartButton(context, controller),
           SizedBox(height: 24.h),
 
           // 策略说明
@@ -178,7 +178,7 @@ class AIAnalysisScreen extends StatelessWidget {
   }
 
   /// 股票代码输入
-  Widget _buildStockInput(BuildContext context) {
+  Widget _buildStockInput(BuildContext context, AIAnalysisController controller) {
     return Row(
       children: [
         Expanded(
@@ -216,7 +216,7 @@ class AIAnalysisScreen extends StatelessWidget {
   }
 
   /// 开始分析按钮（底部大按钮）
-  Widget _buildStartButton(BuildContext context) {
+  Widget _buildStartButton(BuildContext context, AIAnalysisController controller) {
     return ElevatedButton(
       onPressed: controller.stockCode.value.length == 6
           ? controller.startAnalysis
