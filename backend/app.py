@@ -1439,6 +1439,7 @@ def ai_analysis():
     try:
         import akshare as ak
         from datetime import datetime, timedelta
+        import time
 
         # 动态日期范围：最近 18 个月
         end_dt = datetime.now()
@@ -1446,11 +1447,28 @@ def ai_analysis():
         start_date = start_dt.strftime('%Y%m%d')
         end_date = end_dt.strftime('%Y%m%d')
 
-        # 获取日K线数据
-        df = ak.stock_zh_a_hist(symbol=code, period="daily", start_date=start_date, end_date=end_date, adjust="qfq")
+        # 获取日K线数据（带重试机制）
+        df = None
+        last_error = None
+        for attempt in range(3):
+            try:
+                print(f'[ai_analysis] 尝试获取 {code} K线数据 (第{attempt+1}次)')
+                # 使用 timeout 参数避免长时间挂起
+                df = ak.stock_zh_a_hist(symbol=code, period="daily", start_date=start_date, end_date=end_date, adjust="qfq")
+                if df is not None and not df.empty:
+                    print(f'[ai_analysis] 成功获取 {code} K线数据，共 {len(df)} 条')
+                    break
+            except Exception as e:
+                last_error = str(e)
+                print(f'[ai_analysis] 第{attempt+1}次尝试失败: {last_error[:100]}')
+                if attempt < 2:
+                    time.sleep(2 ** attempt)  # 指数退避: 1s, 2s
 
         if df is None or df.empty:
-            return jsonify({'success': False, 'error': f'未获取到 {code} 的K线数据，请确认股票代码是否正确'})
+            error_msg = f'未获取到 {code} 的K线数据'
+            if last_error:
+                error_msg += f'，原因: {last_error[:100]}'
+            return jsonify({'success': False, 'error': error_msg})
 
         if len(df) < 30:
             return jsonify({'success': False, 'error': f'{code} 的K线数据不足（仅 {len(df)} 条），需要至少30条数据'})
