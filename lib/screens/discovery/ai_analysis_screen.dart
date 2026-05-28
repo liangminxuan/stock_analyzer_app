@@ -1284,7 +1284,7 @@ class AIAnalysisController extends GetxController {
         analysisData.value = Map<String, dynamic>.from(data);
       } else {
         hasError.value = true;
-        errorMessage.value = data['message'] as String? ?? '分析失败，请稍后重试';
+        errorMessage.value = (data['error'] as String?) ?? (data['message'] as String?) ?? '分析失败，请稍后重试';
       }
     } catch (e) {
       print('[AIAnalysis] 分析失败: $e');

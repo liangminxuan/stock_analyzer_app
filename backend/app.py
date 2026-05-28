@@ -1432,27 +1432,50 @@ def generate_announcement_interpretation(title, content, stock_name):
 
 @app.route('/api/stock/ai_analysis')
 def ai_analysis():
-    code = request.args.get('code', '')
+    code = request.args.get('code', '').strip()
     if not code:
         return jsonify({'success': False, 'error': '请提供股票代码'})
 
     try:
         import akshare as ak
+        from datetime import datetime, timedelta
+
+        # 动态日期范围：最近 18 个月
+        end_dt = datetime.now()
+        start_dt = end_dt - timedelta(days=540)
+        start_date = start_dt.strftime('%Y%m%d')
+        end_date = end_dt.strftime('%Y%m%d')
+
         # 获取日K线数据
-        prefix = 'sh' if code.startswith(('6', '9')) else ('bj' if code.startswith('8') else 'sz')
-        df = ak.stock_zh_a_hist(symbol=code, period="daily", start_date="20250101", end_date="20260526", adjust="qfq")
+        df = ak.stock_zh_a_hist(symbol=code, period="daily", start_date=start_date, end_date=end_date, adjust="qfq")
+
+        if df is None or df.empty:
+            return jsonify({'success': False, 'error': f'未获取到 {code} 的K线数据，请确认股票代码是否正确'})
+
+        if len(df) < 30:
+            return jsonify({'success': False, 'error': f'{code} 的K线数据不足（仅 {len(df)} 条），需要至少30条数据'})
 
         # 重命名列
         df = df.rename(columns={
             '日期': 'date', '开盘': 'open', '收盘': 'close',
             '最高': 'high', '最低': 'low', '成交量': 'volume'
         })
-        df = df[['date', 'open', 'high', 'low', 'close', 'volume']].sort_values('date')
 
-        # 获取基本面数据（使用腾讯API）
-        # _tencent_quote 函数已在当前文件定义
-        tencent_data = _tencent_quote([code])
-        tq = tencent_data.get(code, {})
+        # 确保列存在
+        required_cols = ['date', 'open', 'high', 'low', 'close', 'volume']
+        missing = [c for c in required_cols if c not in df.columns]
+        if missing:
+            return jsonify({'success': False, 'error': f'K线数据缺少必要列: {missing}'})
+
+        df = df[required_cols].sort_values('date').reset_index(drop=True)
+
+        # 获取基本面数据（使用腾讯API），失败不影响分析
+        tq = {}
+        try:
+            tencent_data = _tencent_quote([code])
+            tq = tencent_data.get(code, {})
+        except Exception as e:
+            print(f'[ai_analysis] 腾讯API获取失败(不影响分析): {e}')
 
         metrics = {
             'pe': tq.get('pe_ttm', 0) or 0,
@@ -1467,7 +1490,9 @@ def ai_analysis():
         return jsonify(result)
     except Exception as e:
         import traceback
-        return jsonify({'success': False, 'error': str(e), 'traceback': traceback.format_exc()[-500:]})
+        tb = traceback.format_exc()
+        print(f'[ai_analysis] 分析异常: {tb}')
+        return jsonify({'success': False, 'error': f'分析出错: {str(e)[:200]}'})
 
 
 if __name__ == '__main__':
