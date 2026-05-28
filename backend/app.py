@@ -1450,7 +1450,7 @@ def ai_analysis():
         df = df[['date', 'open', 'high', 'low', 'close', 'volume']].sort_values('date')
 
         # 获取基本面数据（使用腾讯API）
-        from ai_engine import _tencent_quote
+        # _tencent_quote 函数已在当前文件定义
         tencent_data = _tencent_quote([code])
         tq = tencent_data.get(code, {})
 
