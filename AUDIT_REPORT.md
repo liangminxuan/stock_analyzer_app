@@ -330,3 +330,105 @@ git rm lib/services/stock_service.dart lib/services/ai_service.dart \
 - [ ] 仓库 clone < 50MB；根目录无 APK
 - [ ] release 包使用正式签名；`usesCleartextTraffic` 只对必要域名放行
 
+---
+
+## 5. 附录：证据与复现方式
+
+### 5.1 复现命令
+
+```bash
+# 静态分析基线（Flutter 3.24.5）
+flutter analyze                                          # → 28 issues（含 4 error）
+printf 'include: package:flutter_lints/flutter.yaml\n' > analysis_options.yaml
+flutter analyze                                          # → 142 issues
+
+# 确认 4 个 error 来自不可达文件
+rm lib/services/stock_service.dart && flutter analyze    # → error 归零
+
+# 依赖可达性扫描（脚本见 5.1 说明）
+python3 reach.py
+
+# 线上后端实测
+curl -w '%{http_code} %{time_total}s\n' -o /dev/null \
+  https://stock-analyzer-app-1-j7jd.onrender.com/health
+curl -w '%{http_code} %{time_total}s\n' -o /dev/null \
+  'https://stock-analyzer-app-1-j7jd.onrender.com/api/stock/screen?page=1&size=5&pe_max=20'
+```
+
+可达性扫描（`reach.py`）核心逻辑：从 `lib/main.dart` 出发，按 `import` 关系（跳过 `dart:` / `package:`）做图遍历，输出不可达文件及其行数。
+
+### 5.2 原始输出摘要
+
+`flutter analyze`（未加 lints）— 共 28 issues，其中 4 个 error：
+
+```
+error   • The method 'getTencentRealTimeQuote' isn't defined ... • lib/services/stock_service.dart:16:38
+error   • The method 'getSinaRealTimeQuote' isn't defined ...    • lib/services/stock_service.dart:20:44
+error   • The method 'getSinaBatchQuotes' isn't defined ...      • lib/services/stock_service.dart:34:42
+error   • The named parameter 'limit' isn't defined ...          • lib/services/stock_service.dart:56:9
+info    • 'background' is deprecated ... Use surface instead ... • lib/config/theme.dart:53:9
+warning • The value of the local variable 'prompt' isn't used ... • lib/services/ai_service.dart:21:13
+```
+
+加 `flutter_lints` 后 — 共 142 issues，按规则分布：
+
+| 规则 | 数量 |
+|---|---|
+| `avoid_print` | 63 |
+| `prefer_const_constructors` | 20 |
+| `curly_braces_in_flow_control_structures` | 20 |
+| `unused_local_variable` | 9 |
+| `unused_import` | 7 |
+| `deprecated_member_use` | 4 |
+| `undefined_method` / `undefined_named_parameter` | 4 |
+| 其余（`unused_field`、`prefer_final_fields`、命名规范等） | 15 |
+
+依赖可达性扫描结果：
+
+```
+总 dart 行数: 13383 | 不可达文件: 9/33 | 不可达行数: 3161 (23.6%)
+  - lib/config/constants.dart 182 行
+  - lib/models/announcement.dart 512 行
+  - lib/models/financial.dart 727 行
+  - lib/providers/announcement_provider.dart 110 行
+  - lib/services/ai_service.dart 513 行
+  - lib/services/announcement_service.dart 157 行
+  - lib/services/news_service.dart 72 行
+  - lib/services/stock_service.dart 544 行
+  - lib/widgets/ai_analysis_card.dart 344 行
+```
+
+仓库体积：
+
+```
+in-pack: 851   packs: 2   size-pack: 316.62 MiB
+git ls-files 共 635 个文件，其中 517 个位于 android/app/build/ 或 .dart_tool/
+```
+
+### 5.3 问题 → 证据索引
+
+| 编号 | 问题 | 主要证据位置 |
+|---|---|---|
+| P0-1 | 假行情兜底 | `api_service.dart:246,253,290,293,323,326,385-423` |
+| P0-2 | "AI"实为规则引擎 | `ai_engine.py:3`；`ai_service.dart:29,53,75`；`ARCHITECTURE.md:22` |
+| P0-3 | 死代码 23.6% + 4 编译错误 | `flutter analyze`；`stock_service.dart:16,20,34,56` |
+| P0-4 | 仓库 316MB | `git count-objects -vH`；`.gitignore` |
+| P0-5 | 零测试 / CI 无门禁 | `.github/workflows/build_apk.yml`；无 `test/` |
+| P1-1 | 缓存 bug（返回未补全数据） | `app.py:147-170` |
+| P1-2 | 全局状态 / 多 worker | `app.py:23-85`；`render.yaml` |
+| P1-3 | 无鉴权 / debug 暴露 | `app.py:20,456` |
+| P1-4 | Provider + GetX 混用 | `pubspec.yaml`；`ai_analysis_screen.dart:4,16,26` |
+| P1-5 | 静默失败 / 无 mounted | `stock_provider.dart:85-87`；`finance_screen.dart:36-47` |
+| P1-6 | 无持久化 | `user_provider.dart`（内存 List）；`pubspec.yaml` 无相关依赖 |
+| P1-7 | GBK 未解码 | `api_service.dart:177,184`；实测 `qt.gtimg.cn` |
+| P1-8 | 版本/发布混乱 | `pubspec.yaml:5`；CI tag；README 更新日志；无 LICENSE |
+| P1-9 | 签名/包名/图标/明文 | `build.gradle:39,48`；`AndroidManifest.xml`；`res/`；`constants.dart:11` |
+| P2-1 | 数据源无 SLA + 假基本面 | `constants.dart:11-14`；`app.py:5,263-283` |
+| P2-3 | 无可观测性 | 全仓 `print` 63 处；无 Sentry/埋点 |
+| P2-5 | 未用依赖 / 非懒加载 | `grep package:fl_chart lib/` 为空；`news_screen.dart:737,964` |
+| P2-6 | 文档脱节 | `ARCHITECTURE.md:22`；README 结构树中的 `lib/app.dart` 不存在 |
+
+---
+
+*报告生成时间：2026-10-13 · 评估基线 commit `5256588`（main）· 分析工具 Flutter 3.24.5 / `flutter analyze` · 线上实测目标：`stock-analyzer-app-1-j7jd.onrender.com`*
+

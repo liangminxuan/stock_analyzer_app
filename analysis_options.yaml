@@ -1,0 +1,32 @@
+# 静态分析配置 —— 由代码审计（见 AUDIT_REPORT.md）引入，用于建立质量基线。
+#
+# 当前基线（Flutter 3.24.5，lib/ 13,383 行）：142 issues
+#   avoid_print 63 / prefer_const_constructors 20 /
+#   curly_braces_in_flow_control_structures 20 / unused_* 18 / 其他 21
+#
+# 建议分两步收紧：
+#   1) 先让 CI 只对 error 失败（当前 4 个 error 全部来自不可达文件，
+#      删除 lib/services/stock_service.dart 后即归零）
+#   2) 修完 avoid_print / prefer_const_constructors 等问题后，
+#      再开启 fail on warning / info
+include: package:flutter_lints/flutter.yaml
+
+analyzer:
+  exclude:
+    - "**/*.g.dart"
+    - "**/*.freezed.dart"
+  errors:
+    # 分阶段收紧：编译级问题必须先归零
+    undefined_method: error
+    undefined_named_parameter: error
+    unused_import: warning
+    unused_local_variable: warning
+    unused_field: warning
+    unused_element: warning
+
+linter:
+  rules:
+    # 与本项目最相关的几条（flutter_lints 已含大部分）
+    avoid_print: true
+    use_build_context_synchronously: true
+    prefer_const_constructors: true
