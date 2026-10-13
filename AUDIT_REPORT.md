@@ -137,3 +137,74 @@ curl -w '%{http_code} %{time_total}s' https://stock-analyzer-app-1-j7jd.onrender
 - **建议**：先在 CI 加 `flutter analyze`（当前 142 issues，可先只 fail on error/warning）+ `pytest` 骨架；再针对 `_parseTencentLine`、`getKLineData`、`_calculateMA`、后端 `normalize_stock_data` 补单测（这些是纯函数，最容易测）。
 - **工作量**：CI 门禁 0.5 天；首批 20 个单测 1 天。
 
+### P1 — 1~2 周内（合计约 1.5–2 人周）
+
+#### P1-1 后端缓存逻辑有 bug：10 分钟内二次调用会返回"未补全"的数据
+- **证据**：`backend/app.py` `_enrich_with_tencent()`（`:147` 起）
+  ```python
+  if _tencent_enrich_cache is not None:
+      cache_age = time.time() - _tencent_enrich_cache
+      if cache_age < 600:
+          return df      # ← 该变量只记录时间戳、不缓存数据，返回的是未补 PE/PB 的 df
+  ```
+- **影响**：同一筛选条件在 10 分钟窗口内结果会时好时坏（PE/PB 缺失 → 被筛选条件静默过滤掉），表现为"选股结果不稳定"。
+- **建议**：缓存补充后的 DataFrame（或 `{code: {pe, pb, cap}}` 字典）而非时间戳；用 TTL 结构替代手写时间戳。
+- **工作量**：0.5 天。
+
+#### P1-2 后端单文件 1511 行 + 全局可变状态 + 多 worker 状态不一致
+- **证据**：
+  - `backend/app.py` 1511 行、13 个路由集中在一个文件；模块级可变全局：`_cache`、`_cache_timeout`、`_stock_data_cache`、`_tencent_enrich_cache`（`:23-50`）
+  - 后台线程加载 + 请求线程轮询等待：`:52-85`（最多等 **120s**，等待期间占住一个 worker）
+  - `render.yaml` / `backend/render.yaml`：`gunicorn --workers 2` → 两个 worker **各自**加载一份全市场快照（内存翻倍、缓存互不相通）
+  - `get_cached()`（`:26-38`）**无淘汰策略**，key 由 9 个筛选参数拼接（`cache_key = f'screen_{pe_min}_{...}_{industry}'`），随组合无限增长
+  - `_enrich_with_tencent` 按 200 只分批调腾讯（`:186-192`）→ 全市场 5400 只约 27 次外部 HTTP；且用 `df.iterrows()` 逐行回填
+- **建议**：拆分为「数据源层 / 缓存层 / 业务层 / 路由层」；缓存换 Redis 或 SQLite 并加 LRU/TTL；预拉取改成定时任务，请求路径只读缓存。
+- **工作量**：3–5 天（重构）；1 天（仅修缓存与淘汰）。
+
+#### P1-3 无鉴权、无限流，debug 端点在线上公开
+- **证据**：`app.py:20` `CORS(app)`（放开全部来源）；`app.py:456` `/api/debug/test_akshare` 无需任何凭证且会触发 akshare 全量拉取；全部接口无 token、无速率限制。
+- **影响**：可被脚本刷爆免费实例（实测该实例并发与内存都很紧张），或通过 debug 接口做放大攻击。
+- **建议**：`CORS(app, resources={...})` 限域；debug 路由加 `ENABLE_DEBUG` 环境开关；引入 Flask-Limiter 基础限流。
+- **工作量**：0.5 天。
+
+#### P1-4 双状态管理混用（Provider + GetX）
+- **证据**：`pubspec.yaml` 同时声明 `provider: ^6.1.1` 与 `get: ^4.6.6`；全仓 `package:get` 仅 1 处引用 —— `lib/screens/discovery/ai_analysis_screen.dart:4`，其余页面全用 Provider；该页内又混用 `GetBuilder(init:)`（`:16`）与 `Obx`（`:26`）。
+- **建议**：统一到 Provider（或统一 GetX），移除另一个依赖；该页 `Obx` 包在 `GetBuilder` 内属于冗余建模。
+- **工作量**：0.5–1 天。
+
+#### P1-5 静默失败、无生命周期守卫、无自动刷新
+- **证据**：
+  - `print(` 共 **63 处**，无 logger、无级别、无脱敏
+  - K 线失败只 print 不写 `_error`：`lib/providers/stock_provider.dart:85-87`；UI 因此没有任何失败提示
+  - `mounted` 仅 3 处、`if (!mounted)` **0 处**，而 `await` 后直接 `setState` 的写法存在（如 `lib/screens/finance/finance_screen.dart:36-47`）→ 典型"页面已销毁仍 setState"隐患
+  - 全仓无 `Timer.periodic`，行情页只能手动下拉刷新（`Future.delayed` 仅用于 `discovery_service.dart` 的轮询等待）
+- **建议**：引入 logger（或 `debugPrint` + `kDebugMode` 包裹）；失败统一写入 `error` 并在 UI 呈现；所有 `await` 后补 `if (!mounted) return;`；行情页加可关闭的定时刷新（仅交易时段）。
+- **工作量**：1 天。
+
+#### P1-6 无本地持久化：自选股/持仓/历史杀进程即丢
+- **证据**：全仓无 `shared_preferences` / `hive` / `sqflite` / `path_provider` 依赖与引用；`lib/providers/user_provider.dart` 的自选股 `_watchlist`、持仓 `_portfolio`、分析历史 `_analysisHistory` 全为内存 `List`，由 `main.dart:35` 直接 new。
+- **影响**：核心留存功能（自选股）重启即清零，用户无法建立使用习惯。
+- **建议**：`shared_preferences`（JSON 序列化）或 `hive`；Provider 初始化时 hydrate、变更时持久化；后续可上云同步。
+- **工作量**：0.5–1 天。
+
+#### P1-7 GBK 未解码，非预定义股票名称退化成代码
+- **证据**：实测 `curl https://qt.gtimg.cn/q=sh600519` 返回 GBK（名称乱码）；`lib/services/api_service.dart:184` `_getName()` 兜底顺序为 `_nameCache → _stockNames(仅 40 只预定义) → 返回纯代码`；`:177` 注释自述"不依赖 GBK 解码名称"。
+- **影响**：除搜索过的股票外，大量股票名称显示为代码；因列表首屏恰好是预定义的那 30 只，问题被掩盖。
+- **建议**：用 `package:charset_converter` 解 GBK，或统一改走返回 UTF-8 的东财接口取名称；40 只的硬编码名称表只作兜底。
+- **工作量**：1 天（含真机回归）。
+
+#### P1-8 版本与发布流程混乱
+- **证据**：`pubspec.yaml:5` `version: 1.0.0+1`；CI 打 tag `v1.0.${{ github.run_number }}`；根目录 APK 命名已到 `v2.8.0`；`README.md` 更新日志停在 `v1.0.0 (2025-01)`；README 声明 MIT 但**仓库无 LICENSE 文件**，也无 CHANGELOG。
+- **建议**：以 `pubspec.yaml` 为唯一版本源，CI 从中读取版本打 tag；补 LICENSE、CHANGELOG；根目录 APK 改走 Release 分发。
+- **工作量**：0.5 天。
+
+#### P1-9 发布工程不达标（签名、包名、图标、明文流量）
+- **证据**：
+  - `android/app/build.gradle:48` release 构建使用 `signingConfig signingConfigs.debug`（无法上架/无法覆盖升级）
+  - `android/app/build.gradle:39` `applicationId "com.example.stock_analyzer_app"`（示例包名）
+  - `android/app/src/main/res/` 仅 `mipmap-hdpi/ic_launcher.png`：缺 xhdpi/xxhdpi/xxxhdpi 与自适应图标（已有 `drawable/ic_launcher_foreground.xml` 却未接入 `mipmap-anydpi-v26`）
+  - `AndroidManifest.xml` 中 `android:usesCleartextTraffic="true"` 全局放开明文
+  - `lib/config/constants.dart:11` 新浪数据源为 `http://hq.sinajs.cn`（明文；实测需 Referer 才可用）
+- **建议**：正式 keystore + `key.properties`（不入库）；包名改自有域名反写；补齐图标与启动图；用 `network_security_config.xml` 只对必要域名放行明文。
+- **工作量**：1 天（含上架物料）。
+
