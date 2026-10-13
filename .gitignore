@@ -4,3 +4,10 @@ android/app/build/
 build/
 *.iml
 .idea/
+
+# 构建产物与发布包（不再入库）
+*.apk
+*.zip
+run*.zip
+apk_*.zip
+stock_analyzer_*.apk
