@@ -264,3 +264,69 @@ curl -w '%{http_code} %{time_total}s' https://stock-analyzer-app-1-j7jd.onrender
 
 > 说明：这里衡量的是"工程成熟度"而非"功能数量"。项目缺的不是新功能，而是**可信数据 + 可验证 + 可维护**这三块地基。
 
+---
+
+## 4. 建议的落地路线
+
+### 阶段 0：止血（0.5–1 天，改动小、收益立竿见影）
+
+**1) 仓库瘦身**（体积从 316MB 量级回落）
+```bash
+git rm -r --cached android/app/build .dart_tool
+cat >> .gitignore <<'EOF'
+
+# 构建产物与发布包（不再入库）
+*.apk
+*.zip
+run*.zip
+apk_*.zip
+EOF
+git commit -m "chore: 停止跟踪构建产物与 APK"
+# 可选（会改历史，需团队协调）：git filter-repo --path android/app/build --path .dart_tool --invert-paths
+```
+
+**2) 加静态门禁**：新增 `analysis_options.yaml`（本分支已附带），CI 增加一步：
+```yaml
+      - name: Analyze
+        run: flutter analyze
+```
+
+**3) 删除不可达代码（3161 行）**：建议先 `git mv` 到 `attic/` 留档一个版本再删。
+```bash
+git rm lib/services/stock_service.dart lib/services/ai_service.dart \
+       lib/services/announcement_service.dart lib/services/news_service.dart \
+       lib/widgets/ai_analysis_card.dart lib/providers/announcement_provider.dart
+# models/financial.dart、models/announcement.dart、config/constants.dart 若要保留，需真正接入
+```
+
+### 阶段 1：可信数据与可验证（约 1 周）
+
+4. **去假数据**：`_getDefaultHotStocks` / `_defaultIndices` / `_emptyQuote` 改为抛异常，UI 统一错误态 + 重试。
+5. **修后端缓存 bug**：`_enrich_with_tencent` 缓存数据本身（或引入 `cachetools.TTLCache`），不要缓存时间戳。
+6. **补首批单测**（优先纯函数）：`mkdir -p test && flutter test`，覆盖 `_parseTencentLine`、`getKLineData` 解析、`_calculateMA`、后端 `normalize_stock_data`。
+7. **自选股持久化**：`shared_preferences` + JSON 序列化，Provider 初始化时 hydrate。
+8. **日志与生命周期**：63 处 `print` → logger（`kDebugMode` 保护）；所有 `await` 后补 `if (!mounted) return;`。
+
+### 阶段 2：工程化（2–3 周）
+
+9. **统一状态管理**：二选一（建议保留 Provider，移除 `get`）。
+10. **后端分层 + 定时预拉取 + 持久缓存**；客户端删除 3 分钟轮询（`discovery_service.dart:16-53`）。
+11. **安全基线**：CORS 限域、加限流、debug 端点加环境开关。
+12. **发布工程**：正式 keystore（`key.properties` 不入库）、包名、全套图标、`network_security_config.xml`、LICENSE、隐私政策/用户协议。
+
+### 阶段 3：产品化（3–5 周）
+
+13. **真 AI（若确定要做）**：后端提示词模板 + 结果缓存 + 成本上限 + 失败降级到规则引擎；否则统一改口径。
+14. **数据源可插拔 + 熔断 + 多源交叉校验**；评估付费数据源；清理 `BLUECHIP_POOL` 假基本面。
+15. **可观测性**：Sentry/Crashlytics + 关键路径埋点 + 后端告警。
+16. **i18n / 无障碍 / 性能与体积**。
+
+### 验收标准（Definition of Done）
+
+- [ ] `flutter analyze` 0 error 0 warning，CI 绿
+- [ ] `flutter test` 覆盖解析层核心函数（目标 ≥ 60%）
+- [ ] 断网/接口失败时界面显示明确错误态，且**不出现任何硬编码行情数字**（可写成测试断言）
+- [ ] 冷启动首屏可用 < 3s；选股首调 < 5s（靠预拉取，而非运行时加载）
+- [ ] 仓库 clone < 50MB；根目录无 APK
+- [ ] release 包使用正式签名；`usesCleartextTraffic` 只对必要域名放行
+
