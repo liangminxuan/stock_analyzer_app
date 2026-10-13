@@ -72,3 +72,68 @@ curl -w '%{http_code} %{time_total}s' https://stock-analyzer-app-1-j7jd.onrender
 | `smartbox.gtimg.cn/s3/?q=茅台` | 200 | 返回 `\uXXXX` 转义，需 `json.decode` 二次解码 |
 | `push2his.eastmoney.com` K线 | 200 | 正常，UTF-8 JSON |
 | `http://hq.sinajs.cn/list=` | 200 | **明文 HTTP**，需 Referer，且已在 Android 上被 `usesCleartextTraffic` 放开 |
+
+---
+
+## 2. 问题清单（按优先级）
+
+每条含：现象 → 证据（可定位到文件行） → 影响 → 建议 → 工作量估计。
+
+### P0 — 本周就该修（合计约 2–3 人日）
+
+#### P0-1 接口失败时返回"假行情"，且界面上无法分辨 ★最高危
+- **现象**：行情/指数接口一旦失败，函数不是抛错，而是返回写死的数字。
+- **证据**：`lib/services/api_service.dart`
+  - `:407-415` `_getDefaultHotStocks()` 硬编码 `贵州茅台 1315.0 / 中国平安 45.0 / 招商银行 32.0 …`
+  - `:417-423` `_defaultIndices()` 硬编码 `上证指数 3100.0 / 深证成指 9500.0 / 创业板指 1800.0`
+  - `:385-405` `_emptyQuote()` 全部字段填 0
+  - 失败分支：`:246 / :253`（详情）、`:290 / :293`（列表）、`:323 / :326`（指数）
+- **影响**：实测茅台现价 **1274.89**，而兜底值是 **1315.0**。用户看到的是一个"像真的一样的假价格"，没有任何标识 —— 对金融类应用这是信任与合规红线（可能被认定为误导性信息）。
+- **建议**：删除全部兜底假数据，改为抛 `ApiException`；UI 统一"空态 + 错误原因 + 重试"；如确实需要占位，必须显式标注"示例数据"。
+- **工作量**：0.5 天。
+
+#### P0-2 "AI 分析"名不副实，宣传与实现不符
+- **现象**：项目主打"AI 驱动"，实际是纯规则计算；文档却声称接了 LLM。
+- **证据**：
+  - `backend/ai_engine.py:3` 文件头自述：**"纯 Python 计算，不依赖 LLM"**（实现为 EMA/RSI/BOLL/ADX/ATR/Hurst + 技术 0.6 / 基本面 0.4 加权评分）
+  - `lib/services/ai_service.dart:29 / :53 / :75` 三个方法体直接 `return _mockXxx(...)`，且该文件整体**不可达**（见 P0-3）
+  - `ARCHITECTURE.md:22` 写"本地 AI 模型：使用轻量级 LLM"、"云端 AI API：集成 OpenAI/Claude API（可选）"；`README.md:43` 写"内置 AI 分析引擎"
+  - 输出质量旁证：线上实测返回 `"多空信号不明确，建议等待 clearer 信号"` —— 中英夹杂，来自 `full_ai_analysis()` 的 `action_detail` 文案
+- **影响**：对外表述与实现不一致，属于宣传风险；同时"AI"这一卖点目前没有技术护城河（规则引擎人人可写）。
+- **建议**：二选一 ——（a）改口径为"量化规则引擎/技术指标分析"，如实描述；（b）真接 LLM，并在后端做提示词模板 + 结果缓存 + 成本上限。建议先做（a），再评估（b）。
+- **工作量**：改口径 0.5 天；接 LLM 3–5 天（含缓存与降级）。
+
+#### P0-3 23.6% 的代码不可达，其中含 4 处编译错误
+- **现象**：`flutter analyze` 报 4 个 **error 级**问题，但项目仍能构建 —— 因为这些代码压根没被任何文件 import。
+- **证据**：
+  - `flutter analyze` 输出：`undefined_method` × 3（`stock_service.dart:16 / :20 / :34`）、`undefined_named_parameter` × 1（`:56`）
+  - 删除 `lib/services/stock_service.dart` 后重跑，**error 归零**（28 → 24 issues）
+  - import 可达性扫描（从 `lib/main.dart` 遍历）：**9/33 个文件不可达，共 3161 行 = 23.6%**
+    `config/constants.dart`(182)、`models/announcement.dart`(512)、`models/financial.dart`(727)、`providers/announcement_provider.dart`(110)、`services/ai_service.dart`(513)、`services/announcement_service.dart`(157)、`services/news_service.dart`(72)、`services/stock_service.dart`(544)、`widgets/ai_analysis_card.dart`(344)
+- **影响**：三份重复的"K线/财务/公告分析"实现（`stock_provider` 里在用的、`stock_service` 里的、`ai_service` 里的）；模型层（financial/announcement）形同虚设，页面直接用 `Map<String, dynamic>`；新人无法判断哪份是权威实现。
+- **建议**：先删不可达文件（或先 `git mv` 到 `attic/` 留档），保留的在用逻辑补测试；`models/*` 要么接入 JSON 反序列化，要么删除。
+- **工作量**：0.5 天（删除）+ 1 天（接入模型层，可选）。
+
+#### P0-4 仓库被构建产物和 APK 撑到 316MB
+- **现象**：克隆仓库要拉 300MB+ 无用二进制。
+- **证据**：
+  - `git count-objects -vH` → `size-pack: 316.62 MiB`
+  - `git ls-files` 共 635 个文件，其中 **517 个**在 `android/app/build/` 或 `.dart_tool/` 下（含两个 27MB 的 `program.dill` / `app.dill`）
+  - 根目录另有 27 个 APK/zip，单个 21–24MB（`stock_analyzer_v2.8.0_*.apk`、`run72.zip`、`apk_download.zip` …）
+  - `.gitignore` 里虽然写了 `android/app/build/`、`.dart_tool/`，但**文件早已被跟踪，gitignore 对已跟踪文件无效**
+- **影响**：clone/CI 变慢；`git status` 噪声；仓库接近无法维护。
+- **建议**：
+  ```bash
+  git rm -r --cached android/app/build .dart_tool
+  printf '\n# 构建产物与发布包\n*.apk\n*.zip\nrun*.zip\napk_*.zip\n' >> .gitignore
+  # 可选（需团队协调，会改历史）：用 git-filter-repo 从历史中彻底剔除
+  ```
+- **工作量**：0.5 小时（不含历史重写）。
+
+#### P0-5 零测试 + CI 无任何质量门禁
+- **现象**：没有任何测试文件，CI 只负责打包。
+- **证据**：`find . -name '*_test.dart'` 无结果，无 `test/` 目录；`.github/workflows/build_apk.yml` 步骤仅 `pub get → build apk → upload artifact → create release`；`codemagic.yaml` 同样。
+- **影响**：所有解析逻辑（腾讯 88 字段、GBK、均线、K线、财报字段）只能靠手工回归；提交历史显示数据源已反复返工（sina → eastmoney → tencent 三次替换 K 线源）。
+- **建议**：先在 CI 加 `flutter analyze`（当前 142 issues，可先只 fail on error/warning）+ `pytest` 骨架；再针对 `_parseTencentLine`、`getKLineData`、`_calculateMA`、后端 `normalize_stock_data` 补单测（这些是纯函数，最容易测）。
+- **工作量**：CI 门禁 0.5 天；首批 20 个单测 1 天。
+
