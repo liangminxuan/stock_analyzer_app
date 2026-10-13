@@ -171,7 +171,7 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
                         children: [
                           Icon(Icons.search_off, size: 64.sp, color: Colors.grey),
                           SizedBox(height: 16.h),
-                          Text('未找到符合条件的股票', style: TextStyle(color: Colors.grey)),
+                          const Text('未找到符合条件的股票', style: TextStyle(color: Colors.grey)),
                           SizedBox(height: 8.h),
                           Text('请放宽筛选条件后重试', style: TextStyle(fontSize: 12.sp, color: Colors.grey)),
                         ],

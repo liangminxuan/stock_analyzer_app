@@ -188,7 +188,7 @@ class StockProvider extends ChangeNotifier {
   /// 生成分析结果 - 白话化文案
   KLineAnalysis _generateAnalysis(List<KLineData> klines, String name) {
     if (klines.isEmpty) {
-      return KLineAnalysis(
+      return const KLineAnalysis(
         trend: '未知',
         trendDescription: '数据不足，无法分析',
         technicalSummary: '',
@@ -276,10 +276,10 @@ class StockProvider extends ChangeNotifier {
       'MA5（5日均线）= ${ma5.toStringAsFixed(2)}：代表最近5天的平均成交价，反映短期走势。',
       'MA10（10日均线）= ${ma10.toStringAsFixed(2)}：代表最近10天的平均成交价，反映中期走势。',
       'MA20（20日均线）= ${ma20.toStringAsFixed(2)}：代表最近20天的平均成交价，反映中长期走势。',
-      '$trendReason',
+      trendReason,
       '',
       '第二步：看价格位置',
-      '$priceMaDesc',
+      priceMaDesc,
       '',
       '第三步：看成交量',
       volumeDesc,
@@ -352,7 +352,7 @@ class StockProvider extends ChangeNotifier {
       upDays++;
     }
     if (upDays >= 3) {
-      patterns.add('连续上涨${upDays}天，短期获利盘较多，注意回调风险。');
+      patterns.add('连续上涨$upDays天，短期获利盘较多，注意回调风险。');
     }
 
     int downDays = 0;
@@ -360,7 +360,7 @@ class StockProvider extends ChangeNotifier {
       downDays++;
     }
     if (downDays >= 3) {
-      patterns.add('连续下跌${downDays}天，短期超跌，可能有技术性反弹。');
+      patterns.add('连续下跌$downDays天，短期超跌，可能有技术性反弹。');
     }
 
     return patterns;

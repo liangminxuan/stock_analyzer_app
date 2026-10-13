@@ -242,7 +242,7 @@ class _StockFinanceSheet extends StatefulWidget {
 
 class _StockFinanceSheetState extends State<_StockFinanceSheet> {
   List<Map<String, dynamic>> _financialData = [];
-  List<String> _columns = [];
+  final List<String> _columns = [];
   bool _isLoading = true;
   String? _error;
 
@@ -316,7 +316,7 @@ class _StockFinanceSheetState extends State<_StockFinanceSheet> {
                       children: [
                         Icon(Icons.error_outline, size: 48.sp, color: Colors.grey),
                         SizedBox(height: 8.h),
-                        Text(_error!, style: TextStyle(color: Colors.grey)),
+                        Text(_error!, style: const TextStyle(color: Colors.grey)),
                         SizedBox(height: 8.h),
                         ElevatedButton(
                           onPressed: _loadData,
@@ -334,7 +334,7 @@ class _StockFinanceSheetState extends State<_StockFinanceSheet> {
                       children: [
                         Icon(Icons.inbox, size: 48.sp, color: Colors.grey),
                         SizedBox(height: 8.h),
-                        Text('暂无财报数据', style: TextStyle(color: Colors.grey)),
+                        const Text('暂无财报数据', style: TextStyle(color: Colors.grey)),
                       ],
                     ),
                   ),
@@ -529,7 +529,7 @@ class _StockFinanceSheetState extends State<_StockFinanceSheet> {
             crossAxisAlignment: CrossAxisAlignment.start,
             mainAxisSize: MainAxisSize.min,
             children: [
-              Text('${widget.name} (${widget.code})', style: TextStyle(fontWeight: FontWeight.bold)),
+              Text('${widget.name} (${widget.code})', style: const TextStyle(fontWeight: FontWeight.bold)),
               SizedBox(height: 16.h),
               Text('主要财务数据', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14.sp)),
               SizedBox(height: 8.h),

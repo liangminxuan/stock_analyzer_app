@@ -76,7 +76,7 @@ class AppTheme {
         ),
         color: surfaceLight,
       ),
-      bottomNavigationBarTheme: BottomNavigationBarThemeData(
+      bottomNavigationBarTheme: const BottomNavigationBarThemeData(
         backgroundColor: surfaceLight,
         selectedItemColor: primaryColor,
         unselectedItemColor: textSecondaryLight,
@@ -168,7 +168,7 @@ class AppTheme {
         ),
         color: surfaceDark,
       ),
-      bottomNavigationBarTheme: BottomNavigationBarThemeData(
+      bottomNavigationBarTheme: const BottomNavigationBarThemeData(
         backgroundColor: surfaceDark,
         selectedItemColor: primaryColor,
         unselectedItemColor: textSecondaryDark,

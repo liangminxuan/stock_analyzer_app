@@ -26,7 +26,7 @@ class _NewsScreenState extends State<NewsScreen> {
   bool _isLoadingAnnouncements = true;
   String? _announcementsError;
   int _currentPage = 1;
-  int _totalAnnouncements = 0;
+  final int _totalAnnouncements = 0;
   bool _hasMore = true;
 
   @override
@@ -524,7 +524,7 @@ class _NewsScreenState extends State<NewsScreen> {
                       backgroundColor: Theme.of(context).colorScheme.secondary.withOpacity(0.1),
                     ),
                     SizedBox(width: 8.w),
-                    Text(date, style: TextStyle(color: Colors.grey)),
+                    Text(date, style: const TextStyle(color: Colors.grey)),
                   ],
                 ),
                 SizedBox(height: 8.h),
@@ -710,7 +710,7 @@ class _StockAnnouncementSheetState extends State<_StockAnnouncementSheet> {
                       children: [
                         Icon(Icons.error_outline, size: 48.sp, color: Colors.grey),
                         SizedBox(height: 8.h),
-                        Text(_error!, style: TextStyle(color: Colors.grey)),
+                        Text(_error!, style: const TextStyle(color: Colors.grey)),
                         SizedBox(height: 8.h),
                         ElevatedButton(
                           onPressed: _loadData,
@@ -741,7 +741,7 @@ class _StockAnnouncementSheetState extends State<_StockAnnouncementSheet> {
                       if (_announcements.isEmpty)
                         Padding(
                           padding: EdgeInsets.all(16.w),
-                          child: Text('暂无相关公告', style: TextStyle(color: Colors.grey)),
+                          child: const Text('暂无相关公告', style: TextStyle(color: Colors.grey)),
                         )
                       else
                         ..._announcements.map((a) => Card(
@@ -949,7 +949,7 @@ class _AnnouncementDetailSheetState extends State<_AnnouncementDetailSheet> {
                       children: [
                         Icon(Icons.error_outline, size: 48.sp, color: Colors.grey),
                         SizedBox(height: 8.h),
-                        Text(_error!, style: TextStyle(color: Colors.grey)),
+                        Text(_error!, style: const TextStyle(color: Colors.grey)),
                         SizedBox(height: 8.h),
                         ElevatedButton(
                           onPressed: _loadDetail,

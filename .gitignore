@@ -11,3 +11,6 @@ build/
 run*.zip
 apk_*.zip
 stock_analyzer_*.apk
+
+# 本地环境文件
+android/local.properties

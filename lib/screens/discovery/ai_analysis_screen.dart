@@ -1207,9 +1207,9 @@ class _GaugePainter extends CustomPainter {
     );
 
     // 左标签 "看空"
-    textPainter.text = TextSpan(
+    textPainter.text = const TextSpan(
       text: '看空',
-      style: TextStyle(color: const Color(0xFFE74C3C), fontSize: 11),
+      style: TextStyle(color: Color(0xFFE74C3C), fontSize: 11),
     );
     textPainter.layout();
     textPainter.paint(
@@ -1218,9 +1218,9 @@ class _GaugePainter extends CustomPainter {
     );
 
     // 右标签 "看多"
-    textPainter.text = TextSpan(
+    textPainter.text = const TextSpan(
       text: '看多',
-      style: TextStyle(color: const Color(0xFF27AE60), fontSize: 11),
+      style: TextStyle(color: Color(0xFF27AE60), fontSize: 11),
     );
     textPainter.layout();
     textPainter.paint(
@@ -1229,9 +1229,9 @@ class _GaugePainter extends CustomPainter {
     );
 
     // 中间标签 "中性"
-    textPainter.text = TextSpan(
+    textPainter.text = const TextSpan(
       text: '中性',
-      style: TextStyle(color: const Color(0xFF7F8C8D), fontSize: 11),
+      style: TextStyle(color: Color(0xFF7F8C8D), fontSize: 11),
     );
     textPainter.layout();
     textPainter.paint(

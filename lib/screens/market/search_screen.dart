@@ -38,7 +38,7 @@ class _SearchScreenState extends State<SearchScreen> {
   }
 
   Future<void> _search(String keyword) async {
-    if (keyword.length < 1) {
+    if (keyword.isEmpty) {
       setState(() {
         _searchResults = [];
         _hasSearched = false;
@@ -99,7 +99,7 @@ class _SearchScreenState extends State<SearchScreen> {
             ),
             onChanged: (value) {
               setState(() {});
-              if (value.length >= 1) {
+              if (value.isNotEmpty) {
                 _search(value);
               }
             },

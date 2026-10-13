@@ -261,32 +261,39 @@ class FinancialData {
     int score = 50; // 基础分
 
     // 盈利能力 (25分)
-    if (roe > 15) score += 10;
-    else if (roe > 10) score += 5;
+    if (roe > 15) {
+      score += 10;
+    } else if (roe > 10) score += 5;
     else if (roe > 5) score += 2;
 
-    if (netMargin > 20) score += 10;
-    else if (netMargin > 10) score += 5;
+    if (netMargin > 20) {
+      score += 10;
+    } else if (netMargin > 10) score += 5;
     else if (netMargin > 5) score += 2;
 
-    if (grossMargin > 30) score += 5;
-    else if (grossMargin > 20) score += 2;
+    if (grossMargin > 30) {
+      score += 5;
+    } else if (grossMargin > 20) score += 2;
 
     // 成长性 (20分)
-    if (revenueYoy > 20) score += 10;
-    else if (revenueYoy > 10) score += 5;
+    if (revenueYoy > 20) {
+      score += 10;
+    } else if (revenueYoy > 10) score += 5;
     else if (revenueYoy > 0) score += 2;
 
-    if (netProfitYoy > 20) score += 10;
-    else if (netProfitYoy > 10) score += 5;
+    if (netProfitYoy > 20) {
+      score += 10;
+    } else if (netProfitYoy > 10) score += 5;
     else if (netProfitYoy > 0) score += 2;
 
     // 偿债能力 (15分)
-    if (debtRatio < 40) score += 10;
-    else if (debtRatio < 60) score += 5;
+    if (debtRatio < 40) {
+      score += 10;
+    } else if (debtRatio < 60) score += 5;
 
-    if (currentRatio > 2) score += 5;
-    else if (currentRatio > 1.5) score += 2;
+    if (currentRatio > 2) {
+      score += 5;
+    } else if (currentRatio > 1.5) score += 2;
 
     // 现金流 (10分)
     if (operatingCashFlow > 0) score += 5;
