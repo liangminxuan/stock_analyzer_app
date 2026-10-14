@@ -446,7 +446,7 @@ flutter analyze                            # → No issues found!（修复前 14
 flutter test                               # → All tests passed!（23 个用例）
 cd backend && python -m pytest tests -q    # → 22 passed
 python3 tool/reach.py                      # → 不可达代码 23.6% → 12.2%
-git ls-files | wc -l                       # → 635 → 122
+git ls-files | wc -l                       # → 635 → 131
 ```
 
 | 指标 | 修复前 | 修复后 |
@@ -455,7 +455,7 @@ git ls-files | wc -l                       # → 635 → 122
 | 前端单测 | 0 | **23 个，全绿** |
 | 后端单测 | 0 | **22 个，全绿** |
 | 不可达代码 | 3161 行 / 23.6% | 1450 行 / 12.2% |
-| git 跟踪文件 | 635 | 122 |
+| git 跟踪文件 | 635 | 131 |
 | `print()` 调用 | 63 | 0（统一走 logger） |
 | 硬编码假行情兜底 | 3 个函数 | 0 |
 | CI 质量门禁 | 无 | analyze + test + pytest（workflow 见 `docs/ci/`） |
@@ -468,7 +468,7 @@ git ls-files | wc -l                       # → 635 → 122
 | P0-1 | 假行情兜底 | 已修 | 删除 `_getDefaultHotStocks`/`_defaultIndices`/`_emptyQuote`，改为抛 `ApiException` | `api_service_test.dart` 断言失败即抛异常 |
 | P0-2 | AI 名不副实 | 已修 | README/ARCHITECTURE 改为如实描述"量化规则引擎"；删除 mock 的 `ai_service.dart` | 文档与 `ai_engine.py` 一致 |
 | P0-3 | 死代码 + 4 编译错误 | 已修 | 删除 6 个不可达/损坏文件 | analyze error 归零 |
-| P0-4 | 仓库 316MB | 已修 | `git rm --cached` 构建产物 + `.gitignore` 规则 | 跟踪文件 635→122 |
+| P0-4 | 仓库 316MB | 已修 | `git rm --cached` 构建产物 + `.gitignore` 规则 | 跟踪文件 635→131 |
 | P0-5 | 零测试 / CI 无门禁 | 已修 | 45 个单测；CI 门禁见 `docs/ci/build_apk.yml.proposed` | `flutter test` / `pytest` 全绿 |
 | P1-1 | 缓存返回未补全数据 | 已修 | 缓存数据本身并回填（`_tencent_fundamentals_cache`） | `test_cache_and_enrich.py` |
 | P1-2 | 缓存无界 + 全局状态 | 部分 | 缓存加 TTL + LRU（上限 256）；分层重构未做 | `test_cache_and_enrich.py` |
