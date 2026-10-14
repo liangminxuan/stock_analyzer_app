@@ -21,3 +21,7 @@ android/local.properties
 # Flutter 工具生成文件
 .flutter-plugins
 .flutter-plugins-dependencies
+
+# Python 生成文件
+__pycache__/
+*.pyc
