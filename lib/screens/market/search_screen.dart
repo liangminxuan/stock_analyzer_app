@@ -2,8 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 import '../../config/routes.dart';
 import '../../services/api_service.dart';
-import '../../models/stock.dart';
-import '../../widgets/stock_card.dart';
 
 /// 搜索页面
 class SearchScreen extends StatefulWidget {

@@ -175,7 +175,6 @@ class CandlestickPainter extends CustomPainter {
       // 绘制实体
       final bodyTop = yOpen < yClose ? yOpen : yClose;
       final bodyBottom = yOpen < yClose ? yClose : yOpen;
-      final bodyHeight = (bodyBottom - bodyTop).abs();
       
       final bodyPaint = Paint()
         ..color = color
@@ -263,7 +262,8 @@ class CandlestickPainter extends CustomPainter {
   }
 
   @override
-  bool shouldRepaint(covariant CustomPainter oldDelegate) => true;
+  bool shouldRepaint(covariant CandlestickPainter oldDelegate) =>
+      oldDelegate.data != data || oldDelegate.selectedIndex != selectedIndex;
 }
 
 /// 成交量画笔
@@ -306,7 +306,7 @@ class VolumePainter extends CustomPainter {
   }
 
   @override
-  bool shouldRepaint(covariant CustomPainter) => true;
+  bool shouldRepaint(covariant VolumePainter oldDelegate) => oldDelegate.data != data;
 }
 
 /// 简化的K线展示组件
@@ -413,5 +413,9 @@ class _MiniKLinePainter extends CustomPainter {
   }
 
   @override
-  bool shouldRepaint(covariant CustomPainter oldDelegate) => true;
+  bool shouldRepaint(covariant _MiniKLinePainter oldDelegate) =>
+      oldDelegate.prices != prices ||
+      oldDelegate.minPrice != minPrice ||
+      oldDelegate.range != range ||
+      oldDelegate.color != color;
 }

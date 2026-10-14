@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:provider/provider.dart';
-import '../../config/routes.dart';
 import '../../providers/market_provider.dart';
 import '../../widgets/stock_card.dart';
 import '../../widgets/loading_widget.dart';

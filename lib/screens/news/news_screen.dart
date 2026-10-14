@@ -26,7 +26,6 @@ class _NewsScreenState extends State<NewsScreen> {
   bool _isLoadingAnnouncements = true;
   String? _announcementsError;
   int _currentPage = 1;
-  final int _totalAnnouncements = 0;
   bool _hasMore = true;
 
   @override
@@ -563,7 +562,6 @@ class _NewsScreenState extends State<NewsScreen> {
   /// 根据公告类型和标题生成简单 AI 解读 - 使用大白话
   String _generateAiInterpretation(String type, String title, String stockName) {
     final lowerTitle = title.toLowerCase();
-    final lowerType = type.toLowerCase();
 
     if (lowerTitle.contains('分红') || lowerTitle.contains('利润分配') || lowerTitle.contains('派息')) {
       return '🎉 好消息！$stockName要给大家发红包了！\n\n'

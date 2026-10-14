@@ -242,7 +242,6 @@ class _StockFinanceSheet extends StatefulWidget {
 
 class _StockFinanceSheetState extends State<_StockFinanceSheet> {
   List<Map<String, dynamic>> _financialData = [];
-  final List<String> _columns = [];
   bool _isLoading = true;
   String? _error;
 
