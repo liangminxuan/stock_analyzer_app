@@ -14,7 +14,7 @@
 2. **K线分析**
    - 日/周/月K线展示
    - MA均线指标
-   - AI智能解读K线形态
+   - 规则引擎解读K线形态（均线/形态/量能）
    - 支撑阻力位分析
    - 买卖建议
 
@@ -34,13 +34,14 @@
 5. **智能选股**
    - 多维度筛选
    - 热门策略推荐
-   - AI智能推荐
+   - 策略评分推荐
 
 ### 技术特点
 
 - **跨平台**: 基于Flutter，一套代码支持Android和iOS
 - **免费数据源**: 集成新浪财经、腾讯财经、东方财富等免费API
-- **AI分析**: 内置AI分析引擎，提供专业解读
+- **分析引擎**: 后端 `ai_engine.py` 为**量化规则引擎**（EMA/RSI/BOLL/ADX/ATR + 基本面评分加权），
+  不依赖大模型，输出可复现、无 API 成本
 - **响应式设计**: 适配各种屏幕尺寸
 
 ## 安装说明
@@ -79,38 +80,44 @@ flutter build ios --release  # iOS
 
 ```
 lib/
-├── main.dart                 # 应用入口
-├── app.dart                  # 应用配置
-├── config/                   # 配置文件
-│   ├── theme.dart           # 主题配置
-│   ├── routes.dart          # 路由配置
-│   └── constants.dart       # 常量定义
-├── models/                   # 数据模型
-│   ├── stock.dart           # 股票模型
-│   ├── kline.dart           # K线数据
-│   ├── financial.dart       # 财务数据
-│   └── announcement.dart    # 公告模型
-├── services/                 # 服务层
-│   ├── api_service.dart     # API服务
-│   ├── stock_service.dart   # 股票数据服务
-│   └── ai_service.dart      # AI分析服务
-├── providers/                # 状态管理
+├── main.dart                      # 应用入口
+├── config/                        # 配置
+│   ├── theme.dart                 # 主题（亮/暗色）
+│   ├── routes.dart                # 路由表
+│   └── constants.dart             # 常量（含分析提示词模板）
+├── models/                        # 数据模型
+│   ├── stock.dart                 # 股票/指数/自选股模型
+│   ├── kline.dart                 # K线与技术指标
+│   ├── financial.dart             # 财务数据
+│   └── announcement.dart          # 公告
+├── services/                      # 服务层
+│   ├── api_service.dart           # 行情/K线/搜索（腾讯 + 东财）
+│   ├── api_exception.dart         # 统一的接口异常与错误文案
+│   ├── backend_service.dart       # 自有后端（公告/新闻/财报/分析）
+│   ├── discovery_service.dart     # 选股与推荐
+│   └── user_data_store.dart       # 本地持久化（自选股）
+├── providers/                     # 状态管理（Provider）
 │   ├── stock_provider.dart
 │   ├── market_provider.dart
 │   └── user_provider.dart
-├── screens/                  # 页面
-│   ├── main/                # 主框架
-│   ├── home/                # 首页
-│   ├── market/              # 行情
-│   ├── finance/             # 财报
-│   ├── news/                # 公告
-│   ├── discovery/           # 选股
-│   └── profile/             # 个人中心
-└── widgets/                  # 通用组件
+├── screens/                       # 页面
+│   ├── main/                      # 主框架（底部导航）
+│   ├── home/                      # 首页
+│   ├── market/                    # 行情 / 搜索 / 个股详情
+│   ├── finance/                   # 财报
+│   ├── news/                      # 公告与新闻
+│   ├── discovery/                 # 选股 / AI 分析页
+│   └── profile/                   # 个人中心
+├── utils/
+│   └── logger.dart                # 统一日志入口
+└── widgets/                       # 通用组件
     ├── stock_card.dart
     ├── kline_chart.dart
     └── loading_widget.dart
-```
+
+test/                              # 单元测试（flutter test）
+backend/                           # Flask 后端（含 pytest 测试）
+
 
 ## 数据源
 

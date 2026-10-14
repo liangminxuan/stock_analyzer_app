@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  网络安全配置（审计 P1-9）：
+  此前 AndroidManifest 里是全局 android:usesCleartextTraffic="true"，
+  等于允许 App 与任意域名进行明文 HTTP 通信。
+
+  现在默认禁止明文流量；如确需访问明文数据源，
+  把域名加到下面的 domain-config 里，而不是全局放开。
+-->
+<network-security-config>
+    <base-config cleartextTrafficPermitted="false" />
+
+    <!-- 历史数据源（http://hq.sinajs.cn）如仍在使用，取消下面注释 -->
+    <!--
+    <domain-config cleartextTrafficPermitted="true">
+        <domain includeSubdomains="false">hq.sinajs.cn</domain>
+    </domain-config>
+    -->
+</network-security-config>

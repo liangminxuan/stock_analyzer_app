@@ -22,6 +22,17 @@ if (flutterVersionName == null) {
     flutterVersionName = "1.0"
 }
 
+// 正式签名配置：读取 android/key.properties（不入库）。
+// 缺少该文件时回退到 debug 签名，保证本地/CI 仍能出包，
+// 但会在构建日志中明确提示（审计 P1-9：release 包不能用 debug 签名发布）。
+def keystoreProperties = new Properties()
+def keystorePropertiesFile = rootProject.file("key.properties")
+if (keystorePropertiesFile.exists()) {
+    keystorePropertiesFile.withReader("UTF-8") { reader ->
+        keystoreProperties.load(reader)
+    }
+}
+
 android {
     namespace "com.example.stock_analyzer_app"
     compileSdk 34
@@ -43,9 +54,26 @@ android {
         versionName flutterVersionName
     }
 
+    signingConfigs {
+        if (keystorePropertiesFile.exists()) {
+            release {
+                keyAlias keystoreProperties["keyAlias"]
+                keyPassword keystoreProperties["keyPassword"]
+                storeFile file(keystoreProperties["storeFile"])
+                storePassword keystoreProperties["storePassword"]
+            }
+        }
+    }
+
     buildTypes {
         release {
-            signingConfig signingConfigs.debug
+            if (keystorePropertiesFile.exists()) {
+                signingConfig signingConfigs.release
+            } else {
+                // 仅为本地调试/CI 出包；上架前必须提供 key.properties
+                println "WARNING: android/key.properties 不存在，release 包仍在使用 debug 签名"
+                signingConfig signingConfigs.debug
+            }
             minifyEnabled false
             shrinkResources false
         }

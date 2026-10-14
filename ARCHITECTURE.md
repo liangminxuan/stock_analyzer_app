@@ -17,12 +17,15 @@
   - 东方财富API: 历史K线数据
   - BaoStock: 免费A股历史数据
 
-### 2.3 AI分析层
-- **本地AI模型**: 使用轻量级LLM进行文本分析
-- **云端AI API**: 集成OpenAI/Claude API进行深度分析（可选）
+### 2.3 分析层（现状：量化规则引擎）
+- **后端 `backend/ai_engine.py`**: EMA / RSI / BOLL / ADX / ATR / Hurst 等技术指标计算，
+  技术面 0.6 + 基本面 0.4 加权评分，输出信号/置信度/仓位建议
+- **不依赖大模型**: 无 LLM 调用、无 API Key、结果可复现
+- 若后续要接入 LLM，请在 `ai_engine.py` 之外新增独立服务，并做好缓存与降级
 
-### 2.4 图表库
-- **fl_chart**: Flutter专业图表库，支持K线图、折线图等
+### 2.4 图表
+- **自绘 CustomPainter**: `lib/widgets/kline_chart.dart`（蜡烛图 + 均线 + 成交量），
+  未使用第三方图表库
 
 ## 3. 功能模块设计
 
@@ -186,50 +189,28 @@ class FinancialData {
 
 ```
 stock_analyzer_app/
-├── android/                    # Android原生配置
-├── ios/                        # iOS原生配置
-├── lib/
-│   ├── main.dart              # 应用入口
-│   ├── app.dart               # 应用配置
-│   ├── config/                # 配置文件
-│   │   ├── api_config.dart    # API配置
-│   │   ├── theme.dart         # 主题配置
-│   │   └── constants.dart     # 常量定义
-│   ├── models/                # 数据模型
-│   │   ├── stock.dart
-│   │   ├── kline.dart
-│   │   ├── financial.dart
-│   │   └── announcement.dart
-│   ├── services/              # 服务层
-│   │   ├── api_service.dart   # API服务
-│   │   ├── stock_service.dart # 股票数据服务
-│   │   ├── ai_service.dart    # AI分析服务
-│   │   └── storage_service.dart # 本地存储
-│   ├── providers/             # 状态管理
-│   │   ├── stock_provider.dart
-│   │   ├── market_provider.dart
-│   │   └── user_provider.dart
-│   ├── screens/               # 页面
-│   │   ├── home/
-│   │   ├── market/
-│   │   ├── finance/
-│   │   ├── news/
-│   │   ├── discovery/
-│   │   └── profile/
-│   ├── widgets/               # 通用组件
-│   │   ├── kline_chart.dart   # K线图组件
-│   │   ├── stock_card.dart    # 股票卡片
-│   │   ├── ai_analysis_card.dart # AI分析卡片
-│   │   └── loading_widget.dart
-│   └── utils/                 # 工具类
-│       ├── date_utils.dart
-│       ├── number_utils.dart
-│       └── format_utils.dart
-├── assets/                    # 静态资源
-│   ├── images/
-│   └── fonts/
-├── test/                      # 测试文件
-├── pubspec.yaml              # 依赖配置
+├── android/                    # Android 原生配置
+├── lib/                        # Flutter 客户端
+│   ├── main.dart
+│   ├── config/                 # theme / routes / constants
+│   ├── models/                 # stock / kline / financial / announcement
+│   ├── services/               # api_service / api_exception / backend_service
+│   │                           # discovery_service / user_data_store
+│   ├── providers/              # stock / market / user（Provider 状态管理）
+│   ├── screens/                # main / home / market / finance / news
+│   │                           # discovery / profile
+│   ├── utils/logger.dart       # 统一日志入口
+│   └── widgets/                # stock_card / kline_chart / loading_widget
+├── test/                       # 前端单元测试（flutter test）
+├── backend/                    # Flask 后端
+│   ├── app.py                  # 路由 + 缓存 + 限流 + 数据源
+│   ├── ai_engine.py            # 量化规则引擎（技术指标 + 评分）
+│   ├── requirements.txt
+│   ├── requirements-dev.txt
+│   └── tests/                  # pytest 测试
+├── docs/ci/                    # 待应用的 CI 门禁改动
+├── analysis_options.yaml       # 静态分析门禁
+├── pubspec.yaml
 └── README.md
 ```
 
@@ -239,39 +220,28 @@ stock_analyzer_app/
 dependencies:
   flutter:
     sdk: flutter
-  
+
   # 网络请求
   dio: ^5.4.0
-  http: ^1.1.0
-  
+
   # 状态管理
   provider: ^6.1.1
-  
-  # 图表
-  fl_chart: ^0.66.0
-  candlesticks: ^2.1.0
-  
-  # 本地存储
-  shared_preferences: ^2.2.2
-  hive: ^2.2.3
-  
-  # UI组件
+  get: ^4.6.6            # 仅 AI 分析页在用（待统一，见审计 P1-4）
+
+  # 本地持久化
+  shared_preferences: ^2.2.0
+
+  # UI 组件
   flutter_screenutil: ^5.9.0
   shimmer: ^3.0.0
-  pull_to_refresh: ^2.0.0
-  
-  # 工具
-  intl: ^0.18.1
-  json_annotation: ^4.8.1
-  freezed_annotation: ^2.4.1
-  
-  # AI/ML
-  google_generative_ai: ^0.2.0  # Google Gemini
-  
+
 dev_dependencies:
-  build_runner: ^2.4.7
-  json_serializable: ^6.7.1
-  freezed: ^2.4.5
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^3.0.1
+```
+
+> K线图为自绘 `CustomPainter`，未引入第三方图表库。
 ```
 
 ## 9. 开发计划

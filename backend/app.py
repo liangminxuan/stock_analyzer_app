@@ -15,6 +15,7 @@ from datetime import datetime, timedelta
 import traceback
 import pandas as pd
 import time
+import functools
 import threading
 from collections import OrderedDict
 from ai_engine import full_ai_analysis, calculate_technical_signals, calculate_risk_metrics
@@ -47,6 +48,49 @@ def set_cached(key, data, timeout_seconds=300):
     _cache.move_to_end(key)
     while len(_cache) > _CACHE_MAX_ENTRIES:
         _cache.popitem(last=False)
+
+
+# ==================== 简易限流（不引入额外依赖）====================
+#
+# 背景（AUDIT_REPORT.md P1-3）：所有接口此前无任何速率限制，
+# 一个脚本就能把免费实例刷爆。这里做单 IP 滑动窗口限流。
+_rate_limit_lock = threading.Lock()
+_rate_limit_hits = {}          # ip -> [命中时间戳]
+_RATE_LIMIT_MAX_KEYS = 4096    # 防止 IP 维度内存无界增长
+
+def _client_ip():
+    forwarded = request.headers.get('X-Forwarded-For', '')
+    if forwarded:
+        return forwarded.split(',')[0].strip()
+    return request.remote_addr or 'unknown'
+
+def rate_limit(func):
+    """单 IP 滑动窗口限流装饰器。
+
+    可用环境变量调整：RATE_LIMIT_MAX_REQUESTS（默认 60）、
+    RATE_LIMIT_WINDOW_SECONDS（默认 60）。
+    """
+    @functools.wraps(func)
+    def wrapper(*args, **kwargs):
+        limit = int(os.environ.get('RATE_LIMIT_MAX_REQUESTS', '60'))
+        window = int(os.environ.get('RATE_LIMIT_WINDOW_SECONDS', '60'))
+        if limit <= 0:
+            return func(*args, **kwargs)
+
+        key = _client_ip()
+        now = time.time()
+        with _rate_limit_lock:
+            hits = [t for t in _rate_limit_hits.get(key, []) if now - t < window]
+            if len(hits) >= limit:
+                return jsonify({'success': False, 'error': '请求过于频繁，请稍后重试'}), 429
+            hits.append(now)
+            _rate_limit_hits[key] = hits
+            if len(_rate_limit_hits) > _RATE_LIMIT_MAX_KEYS:
+                for stale in list(_rate_limit_hits)[:len(_rate_limit_hits) - _RATE_LIMIT_MAX_KEYS]:
+                    _rate_limit_hits.pop(stale, None)
+        return func(*args, **kwargs)
+
+    return wrapper
 
 
 # ========== 全局股票数据缓存 ==========
@@ -955,6 +999,7 @@ def normalize_stock_data(df):
 
 
 @app.route('/api/stock/screen', methods=['GET'])
+@rate_limit
 def stock_screen():
     """
     股票筛选器 - 根据条件筛选股票
@@ -1112,6 +1157,7 @@ def stock_screen():
 
 
 @app.route('/api/stock/recommend', methods=['GET'])
+@rate_limit
 def stock_recommend():
     """
     智能选股推荐 - 基于策略推荐股票
@@ -1358,6 +1404,7 @@ def get_industries():
 # ==================== 公告原文解读 API ====================
 
 @app.route('/api/announcement/detail', methods=['GET'])
+@rate_limit
 def get_announcement_detail():
     """
     获取公告详情并解读
@@ -1483,6 +1530,7 @@ def generate_announcement_interpretation(title, content, stock_name):
 
 
 @app.route('/api/stock/ai_analysis')
+@rate_limit
 def ai_analysis():
     code = request.args.get('code', '').strip()
     if not code:
