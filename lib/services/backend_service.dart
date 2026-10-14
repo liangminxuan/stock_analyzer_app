@@ -1,5 +1,7 @@
 import 'package:dio/dio.dart';
 
+import '../utils/logger.dart';
+
 /// 后端服务客户端 - 连接 Python 后端获取公告、新闻、财报数据
 class BackendService {
   static final BackendService _instance = BackendService._internal();
@@ -35,7 +37,7 @@ class BackendService {
       final response = await dio.get('/health');
       return response.data['status'] == 'ok';
     } catch (e) {
-      print('[BackendService] 健康检查失败: $e');
+      logDebug('[BackendService] 健康检查失败: $e');
       return false;
     }
   }
@@ -65,7 +67,7 @@ class BackendService {
       }
       return [];
     } catch (e) {
-      print('[BackendService] 获取公告失败: $e');
+      logDebug('[BackendService] 获取公告失败: $e');
       return [];
     }
   }
@@ -81,7 +83,7 @@ class BackendService {
       }
       return [];
     } catch (e) {
-      print('[BackendService] 获取个股新闻失败: $e');
+      logDebug('[BackendService] 获取个股新闻失败: $e');
       return [];
     }
   }
@@ -97,7 +99,7 @@ class BackendService {
       }
       return [];
     } catch (e) {
-      print('[BackendService] 获取财务摘要失败: $e');
+      logDebug('[BackendService] 获取财务摘要失败: $e');
       return [];
     }
   }
@@ -116,7 +118,7 @@ class BackendService {
       }
       return null;
     } catch (e) {
-      print('[BackendService] 获取综合分析失败: $e');
+      logDebug('[BackendService] 获取综合分析失败: $e');
       return null;
     }
   }
@@ -147,7 +149,7 @@ class BackendService {
       }
       return null;
     } catch (e) {
-      print('[BackendService] 获取公告详情失败: $e');
+      logDebug('[BackendService] 获取公告详情失败: $e');
       return null;
     }
   }

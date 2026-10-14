@@ -1,6 +1,8 @@
 import 'package:dio/dio.dart';
 import 'backend_service.dart';
 
+import '../utils/logger.dart';
+
 /// 智能选股服务 - 股票筛选和推荐
 class DiscoveryService {
   static final DiscoveryService _instance = DiscoveryService._internal();
@@ -22,13 +24,13 @@ class DiscoveryService {
         final data = response.data;
 
         if (data['loaded'] == true) {
-          print('[DiscoveryService] 股票数据已就绪, ${data['row_count']} 行');
+          logDebug('[DiscoveryService] 股票数据已就绪, ${data['row_count']} 行');
           return true;
         }
 
         if (data['loading'] == true) {
           final elapsed = data['loading_elapsed'] ?? 0;
-          print('[DiscoveryService] 数据加载中... 已耗时 ${elapsed}s');
+          logDebug('[DiscoveryService] 数据加载中... 已耗时 ${elapsed}s');
           // 等待3秒后重试
           await Future.delayed(const Duration(seconds: 3));
           continue;
@@ -36,19 +38,19 @@ class DiscoveryService {
 
         // 既不在加载也没有数据，且有错误
         if (data['load_error'] != null) {
-          print('[DiscoveryService] 数据加载失败: ${data['load_error']}');
+          logDebug('[DiscoveryService] 数据加载失败: ${data['load_error']}');
           return false;
         }
 
         // 未知状态，等待后重试
         await Future.delayed(const Duration(seconds: 3));
       } catch (e) {
-        print('[DiscoveryService] 检查数据状态失败: $e');
+        logDebug('[DiscoveryService] 检查数据状态失败: $e');
         await Future.delayed(const Duration(seconds: 5));
       }
     }
 
-    print('[DiscoveryService] 等待数据超时');
+    logDebug('[DiscoveryService] 等待数据超时');
     return false;
   }
 
@@ -106,7 +108,7 @@ class DiscoveryService {
       }
       return {'success': false, 'data': [], 'total': 0};
     } catch (e) {
-      print('[DiscoveryService] 筛选股票失败: $e');
+      logDebug('[DiscoveryService] 筛选股票失败: $e');
       return {'success': false, 'data': [], 'total': 0, 'error': e.toString()};
     }
   }
@@ -135,7 +137,7 @@ class DiscoveryService {
       }
       return {'success': false, 'data': [], 'count': 0};
     } catch (e) {
-      print('[DiscoveryService] 推荐股票失败: $e');
+      logDebug('[DiscoveryService] 推荐股票失败: $e');
       return {'success': false, 'data': [], 'count': 0, 'error': e.toString()};
     }
   }
@@ -151,7 +153,7 @@ class DiscoveryService {
       }
       return [];
     } catch (e) {
-      print('[DiscoveryService] 获取行业列表失败: $e');
+      logDebug('[DiscoveryService] 获取行业列表失败: $e');
       return [];
     }
   }

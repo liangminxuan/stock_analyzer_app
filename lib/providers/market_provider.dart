@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import '../models/stock.dart';
 import '../services/api_service.dart';
 
+import '../utils/logger.dart';
+
 /// 市场行情Provider
 class MarketProvider extends ChangeNotifier {
   final StockApiService _apiService = StockApiService();
@@ -26,12 +28,12 @@ class MarketProvider extends ChangeNotifier {
 
     try {
       final data = await _apiService.getMarketIndices();
-      print('[MarketProvider] 获取到 ${data.length} 条指数数据');
+      logDebug('[MarketProvider] 获取到 ${data.length} 条指数数据');
 
       _indices = data.map((e) {
         final point = (e['currentPoint'] ?? 0).toDouble();
         final cp = (e['changePercent'] ?? 0).toDouble();
-        print('[MarketProvider] ${e['name']}: $point 涨跌=$cp%');
+        logDebug('[MarketProvider] ${e['name']}: $point 涨跌=$cp%');
 
         return MarketIndex(
           code: e['code'] ?? '',
@@ -44,7 +46,7 @@ class MarketProvider extends ChangeNotifier {
       }).toList();
     } catch (e) {
       _error = '加载失败: $e';
-      print('[MarketProvider] 获取指数失败: $e');
+      logDebug('[MarketProvider] 获取指数失败: $e');
     } finally {
       _isLoading = false;
       notifyListeners();
@@ -55,7 +57,7 @@ class MarketProvider extends ChangeNotifier {
   Future<void> fetchHotStocks() async {
     try {
       final data = await _apiService.getStockList(page: 1, pageSize: 20);
-      print('[MarketProvider] 获取到 ${data.length} 条股票');
+      logDebug('[MarketProvider] 获取到 ${data.length} 条股票');
 
       _hotStocks = data.map((e) {
         final code = e['code']?.toString() ?? '';
@@ -66,7 +68,7 @@ class MarketProvider extends ChangeNotifier {
         final change = (e['change'] as num?)?.toDouble() ?? 0.0;
         final prevClose = (e['previousClose'] as num?)?.toDouble() ?? 0.0;
 
-        print('[MarketProvider] $code $name 价格=$price 涨跌=$changePercent%');
+        logDebug('[MarketProvider] $code $name 价格=$price 涨跌=$changePercent%');
 
         return Stock(
           code: code,
@@ -85,7 +87,7 @@ class MarketProvider extends ChangeNotifier {
 
       notifyListeners();
     } catch (e) {
-      print('[MarketProvider] 获取热门股票失败: $e');
+      logDebug('[MarketProvider] 获取热门股票失败: $e');
       _error = '获取热门股票失败: $e';
       notifyListeners();
     }

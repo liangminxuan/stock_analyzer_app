@@ -2,6 +2,8 @@ import 'dart:convert';
 import 'dart:typed_data';
 import 'package:dio/dio.dart';
 
+import '../utils/logger.dart';
+
 /// 股票数据API服务 - 腾讯财经 + 东方财富K线
 class StockApiService {
   static final StockApiService _instance = StockApiService._internal();
@@ -30,7 +32,7 @@ class StockApiService {
       },
     ));
     _initialized = true;
-    print('[API] 服务初始化完成');
+    logDebug('[API] 服务初始化完成');
   }
 
   /// 获取股票名称（优先缓存 → 预定义 → 代码）
@@ -116,7 +118,7 @@ class StockApiService {
       if (keyword.isNotEmpty) {
         try {
           final url = 'https://smartbox.gtimg.cn/s3/?v=2&q=${Uri.encodeComponent(keyword)}&t=all';
-          print('[API] 搜索: $url');
+          logDebug('[API] 搜索: $url');
           final response = await _dio.get(url);
           final text = response.data.toString();
 
@@ -159,14 +161,14 @@ class StockApiService {
             }
           }
         } catch (e) {
-          print('[API] 腾讯搜索失败: $e');
+          logDebug('[API] 腾讯搜索失败: $e');
         }
       }
 
-      print('[API] 搜索"$keyword"返回 ${results.length} 条');
+      logDebug('[API] 搜索"$keyword"返回 ${results.length} 条');
       return results.take(20).toList();
     } catch (e) {
-      print('[API] 搜索失败: $e');
+      logDebug('[API] 搜索失败: $e');
       return [];
     }
   }
@@ -227,7 +229,7 @@ class StockApiService {
         'askVolumes': askVolumes,
       };
     } catch (e) {
-      print('[API] 解析失败: $e');
+      logDebug('[API] 解析失败: $e');
       return null;
     }
   }
@@ -237,7 +239,7 @@ class StockApiService {
     try {
       final tc = _tencentCode(code);
       final url = 'https://qt.gtimg.cn/q=$tc';
-      print('[API] 请求: $url');
+      logDebug('[API] 请求: $url');
 
       final response = await _dio.get(url);
       final data = response.data.toString();
@@ -247,12 +249,12 @@ class StockApiService {
 
       final result = _parseTencentLine(match.group(1)!, code);
       if (result != null) {
-        print('[API] 成功: ${result['name']} 价格=${result['currentPrice']}');
+        logDebug('[API] 成功: ${result['name']} 价格=${result['currentPrice']}');
         return result;
       }
       return _emptyQuote(code);
     } catch (e) {
-      print('[API] 行情失败: $code - $e');
+      logDebug('[API] 行情失败: $code - $e');
       return _emptyQuote(code);
     }
   }
@@ -286,10 +288,10 @@ class StockApiService {
         if (result != null) results.add(result);
       }
 
-      print('[API] 获取 ${results.length} 条');
+      logDebug('[API] 获取 ${results.length} 条');
       return results.isEmpty ? _getDefaultHotStocks() : results;
     } catch (e) {
-      print('[API] 列表失败: $e');
+      logDebug('[API] 列表失败: $e');
       return _getDefaultHotStocks();
     }
   }
@@ -322,7 +324,7 @@ class StockApiService {
 
       return results.isEmpty ? _defaultIndices() : results;
     } catch (e) {
-      print('[API] 指数失败: $e');
+      logDebug('[API] 指数失败: $e');
       return _defaultIndices();
     }
   }
@@ -345,7 +347,7 @@ class StockApiService {
           '&fields2=f51,f52,f53,f54,f55,f56,f57,f58,f59,f60,f61,f62,f63,f64,f65'
           '&klt=$klt&fqt=1&end=20500101&lmt=$count';
 
-      print('[API] K线: $secid klt=$klt');
+      logDebug('[API] K线: $secid klt=$klt');
 
       final response = await _dio.get(url);
       final text = response.data.toString();
@@ -372,10 +374,10 @@ class StockApiService {
         }
       }
 
-      print('[API] K线 ${results.length} 条');
+      logDebug('[API] K线 ${results.length} 条');
       return results;
     } catch (e) {
-      print('[API] K线失败: $e');
+      logDebug('[API] K线失败: $e');
       return [];
     }
   }

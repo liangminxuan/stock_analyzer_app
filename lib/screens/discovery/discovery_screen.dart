@@ -3,6 +3,8 @@ import 'package:flutter_screenutil/flutter_screenutil.dart';
 import '../../config/routes.dart';
 import '../../services/discovery_service.dart';
 
+import '../../utils/logger.dart';
+
 /// 选股页面 - 智能选股与股票筛选
 class DiscoveryScreen extends StatefulWidget {
   const DiscoveryScreen({super.key});
@@ -1079,7 +1081,7 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
         });
       }
     } catch (e) {
-      print('选股失败: $e');
+      logDebug('选股失败: $e');
       setState(() {
         _screenResults = [];
         _totalResults = 0;

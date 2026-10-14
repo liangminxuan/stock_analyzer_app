@@ -4,6 +4,8 @@ import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:get/get.dart';
 import '../../services/backend_service.dart';
 
+import '../../utils/logger.dart';
+
 /// AI 对冲基金选股分析页面
 /// 基于 virattt/ai-hedge-fund 项目的策略
 /// 使用 GetX 状态管理
@@ -1287,7 +1289,7 @@ class AIAnalysisController extends GetxController {
         errorMessage.value = (data['error'] as String?) ?? (data['message'] as String?) ?? '分析失败，请稍后重试';
       }
     } catch (e) {
-      print('[AIAnalysis] 分析失败: $e');
+      logDebug('[AIAnalysis] 分析失败: $e');
       hasError.value = true;
       errorMessage.value = '网络请求失败，请检查网络连接后重试';
     } finally {

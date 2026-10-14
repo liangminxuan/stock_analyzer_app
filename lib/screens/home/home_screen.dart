@@ -11,6 +11,8 @@ import '../market/search_screen.dart';
 import '../market/market_screen.dart';
 import '../discovery/discovery_screen.dart';
 
+import '../../utils/logger.dart';
+
 /// 首页
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -36,12 +38,12 @@ class _HomeScreenState extends State<HomeScreen> with AutomaticKeepAliveClientMi
     try {
       await provider.fetchMarketIndices();
     } catch (e) {
-      print('[HomeScreen] Failed to load indices: $e');
+      logDebug('[HomeScreen] Failed to load indices: $e');
     }
     try {
       await provider.fetchHotStocks();
     } catch (e) {
-      print('[HomeScreen] Failed to load hot stocks: $e');
+      logDebug('[HomeScreen] Failed to load hot stocks: $e');
     }
   }
 

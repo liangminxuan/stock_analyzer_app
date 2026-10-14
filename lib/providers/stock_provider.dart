@@ -3,6 +3,8 @@ import '../models/stock.dart';
 import '../models/kline.dart';
 import '../services/api_service.dart';
 
+import '../utils/logger.dart';
+
 /// 股票Provider
 class StockProvider extends ChangeNotifier {
   final StockApiService _apiService = StockApiService();
@@ -32,16 +34,16 @@ class StockProvider extends ChangeNotifier {
     notifyListeners();
 
     try {
-      print('[StockProvider] 获取详情: $code');
+      logDebug('[StockProvider] 获取详情: $code');
       final data = await _apiService.getStockQuote(code);
-      print('[StockProvider] 返回: name=${data['name']} price=${data['currentPrice']} cp=${data['changePercent']}');
+      logDebug('[StockProvider] 返回: name=${data['name']} price=${data['currentPrice']} cp=${data['changePercent']}');
 
       // 始终用 Stock.fromQuote 构建，不做过严验证
       _currentStock = Stock.fromQuote(data);
-      print('[StockProvider] 成功: ${_currentStock?.name} ${_currentStock?.currentPrice}');
+      logDebug('[StockProvider] 成功: ${_currentStock?.name} ${_currentStock?.currentPrice}');
     } catch (e) {
       _error = '加载失败: $e';
-      print('[StockProvider] 详情失败: $e');
+      logDebug('[StockProvider] 详情失败: $e');
     } finally {
       _isLoading = false;
       notifyListeners();
@@ -58,13 +60,13 @@ class StockProvider extends ChangeNotifier {
     notifyListeners();
 
     try {
-      print('[StockProvider] K线: code=$code period=$period');
+      logDebug('[StockProvider] K线: code=$code period=$period');
       final data = await _apiService.getKLineData(
         code: code,
         period: period,
         count: limit,
       );
-      print('[StockProvider] K线返回 ${data.length} 条');
+      logDebug('[StockProvider] K线返回 ${data.length} 条');
 
       var klines = data.map((e) {
         return KLineData(
@@ -81,9 +83,9 @@ class StockProvider extends ChangeNotifier {
 
       _klineData = klines;
       _currentPeriod = period;
-      print('[StockProvider] K线处理完成，${klines.length} 条');
+      logDebug('[StockProvider] K线处理完成，${klines.length} 条');
     } catch (e) {
-      print('[StockProvider] K线失败: $e');
+      logDebug('[StockProvider] K线失败: $e');
     } finally {
       _isLoading = false;
       notifyListeners();
@@ -178,7 +180,7 @@ class StockProvider extends ChangeNotifier {
 
       _klineAnalysis = _generateAnalysis(klines, name);
     } catch (e) {
-      print('[StockProvider] 分析失败: $e');
+      logDebug('[StockProvider] 分析失败: $e');
     } finally {
       _isLoading = false;
       notifyListeners();

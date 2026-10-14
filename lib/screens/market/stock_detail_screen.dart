@@ -8,6 +8,8 @@ import '../../providers/stock_provider.dart';
 import '../../widgets/kline_chart.dart';
 import '../../widgets/loading_widget.dart';
 
+import '../../utils/logger.dart';
+
 /// 股票详情页 - 使用东方财富K线数据 + 自定义K线图表
 class StockDetailScreen extends StatefulWidget {
   final String stockCode;
@@ -38,7 +40,7 @@ class _StockDetailScreenState extends State<StockDetailScreen> {
     if (pureCode.startsWith('sh') || pureCode.startsWith('sz')) {
       pureCode = pureCode.substring(2);
     }
-    print('[StockDetailScreen] 加载数据: $pureCode');
+    logDebug('[StockDetailScreen] 加载数据: $pureCode');
     await provider.fetchStockDetail(pureCode);
     await provider.fetchKLineData(code: pureCode, period: 'day', limit: 60);
   }
