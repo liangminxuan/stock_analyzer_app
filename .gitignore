@@ -14,3 +14,6 @@ stock_analyzer_*.apk
 
 # 本地环境文件
 android/local.properties
+
+# 生成文件
+**/android/**/GeneratedPluginRegistrant.java
