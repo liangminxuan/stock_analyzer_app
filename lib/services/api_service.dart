@@ -1,6 +1,8 @@
 import 'dart:convert';
 import 'package:dio/dio.dart';
 
+import 'api_exception.dart';
+
 import '../utils/logger.dart';
 
 /// 股票数据API服务 - 腾讯财经 + 东方财富K线
@@ -34,10 +36,79 @@ class StockApiService {
     logDebug('[API] 服务初始化完成');
   }
 
-  /// 获取股票名称（优先缓存 → 预定义 → 代码）
+  /// 获取股票名称（优先缓存 → 预定义表 → 代码）
+  ///
+  /// 注意：腾讯行情接口返回 GBK，名称会乱码，所以名称一律以
+  /// [resolveStockName]（搜索接口，UTF-8）或预定义表为准，
+  /// 解析不出来时返回代码本身，绝不返回编造的名称。
   String _getName(String code) {
     final pure = _pureCode(code);
     return _nameCache[pure] ?? _stockNames[pure] ?? pure;
+  }
+
+  /// 通过腾讯搜索接口解析股票名称（返回 UTF-8，避免 GBK 乱码）
+  Future<String?> resolveStockName(String code) async {
+    final pure = _pureCode(code);
+    final cached = _nameCache[pure];
+    if (cached != null) return cached;
+
+    try {
+      final url =
+          'https://smartbox.gtimg.cn/s3/?v=2&q=${Uri.encodeComponent(pure)}&t=all';
+      final response = await _dio.get(url);
+      final name = _parseHintName(response.data.toString(), pure);
+      if (name != null && name.isNotEmpty) {
+        _nameCache[pure] = name;
+        return name;
+      }
+    } catch (e) {
+      logDebug('[API] 名称解析失败: $pure - $e');
+    }
+    return null;
+  }
+
+  /// 解析搜索接口的 v_hint 返回（内容为 \uXXXX 转义），按代码取名称
+  String? _parseHintName(String text, String code) {
+    final match = RegExp(r'v_hint="([^"]*)"').firstMatch(text);
+    if (match == null) return null;
+
+    String decoded;
+    try {
+      decoded = json.decode('"${match.group(1)!}"') as String;
+    } catch (_) {
+      decoded = match.group(1)!;
+    }
+
+    for (final item in decoded.split('^')) {
+      final parts = item.split('~');
+      if (parts.length >= 3 && parts[1] == code) {
+        return parts[2];
+      }
+    }
+    return null;
+  }
+
+  /// 批量补全缺失名称（并发上限 6，避免请求风暴）
+  Future<void> _fillMissingNames(List<Map<String, dynamic>> rows) async {
+    final unknown = rows
+        .where((row) => row['name'] == row['code'])
+        .map((row) => row['code'] as String)
+        .toSet()
+        .toList();
+    if (unknown.isEmpty) return;
+
+    const batchSize = 6;
+    for (var i = 0; i < unknown.length; i += batchSize) {
+      final batch = unknown.skip(i).take(batchSize).toList();
+      final names = await Future.wait(batch.map(resolveStockName));
+      for (var j = 0; j < batch.length; j++) {
+        final resolved = names[j];
+        if (resolved == null) continue;
+        for (final row in rows) {
+          if (row['code'] == batch[j]) row['name'] = resolved;
+        }
+      }
+    }
   }
 
   /// 去掉市场前缀
@@ -244,17 +315,28 @@ class StockApiService {
       final data = response.data.toString();
       final regex = RegExp(r'v_[^=]+="([^"]*)"');
       final match = regex.firstMatch(data);
-      if (match == null) return _emptyQuote(code);
+      if (match == null) {
+        throw ApiException('未获取到 $code 的行情数据，请确认代码是否正确');
+      }
 
       final result = _parseTencentLine(match.group(1)!, code);
-      if (result != null) {
-        logDebug('[API] 成功: ${result['name']} 价格=${result['currentPrice']}');
-        return result;
+      if (result == null) {
+        throw const ApiException('行情数据解析失败，请稍后重试');
       }
-      return _emptyQuote(code);
+
+      // 名称缺失时按需解析（UTF-8 搜索接口），避免显示乱码或代码
+      if (result['name'] == result['code']) {
+        final resolved = await resolveStockName(_pureCode(code));
+        if (resolved != null) result['name'] = resolved;
+      }
+
+      logDebug('[API] 成功: ${result['name']} 价格=${result['currentPrice']}');
+      return result;
+    } on ApiException {
+      rethrow;
     } catch (e) {
       logDebug('[API] 行情失败: $code - $e');
-      return _emptyQuote(code);
+      throw ApiException('行情数据获取失败，请检查网络后重试', cause: e);
     }
   }
 
@@ -287,11 +369,19 @@ class StockApiService {
         if (result != null) results.add(result);
       }
 
+      if (results.isEmpty) {
+        throw const ApiException('未获取到股票列表数据，请稍后重试');
+      }
+
+      await _fillMissingNames(results);
+
       logDebug('[API] 获取 ${results.length} 条');
-      return results.isEmpty ? _getDefaultHotStocks() : results;
+      return results;
+    } on ApiException {
+      rethrow;
     } catch (e) {
       logDebug('[API] 列表失败: $e');
-      return _getDefaultHotStocks();
+      throw ApiException('股票列表获取失败，请检查网络后重试', cause: e);
     }
   }
 
@@ -321,10 +411,15 @@ class StockApiService {
         }
       }
 
-      return results.isEmpty ? _defaultIndices() : results;
+      if (results.isEmpty) {
+        throw const ApiException('未获取到大盘指数数据，请稍后重试');
+      }
+      return results;
+    } on ApiException {
+      rethrow;
     } catch (e) {
       logDebug('[API] 指数失败: $e');
-      return _defaultIndices();
+      throw ApiException('大盘指数获取失败，请检查网络后重试', cause: e);
     }
   }
 
@@ -377,49 +472,8 @@ class StockApiService {
       return results;
     } catch (e) {
       logDebug('[API] K线失败: $e');
-      return [];
+      throw ApiException('K线数据获取失败，请检查网络后重试', cause: e);
     }
   }
 
-  // ==================== 默认数据 ====================
-
-  Map<String, dynamic> _emptyQuote(String code) {
-    final pure = _pureCode(code);
-    return {
-      'code': pure,
-      'name': _getName(code),
-      'market': _market(pure),
-      'currentPrice': 0.0,
-      'previousClose': 0.0,
-      'open': 0.0,
-      'high': 0.0,
-      'low': 0.0,
-      'volume': 0,
-      'turnover': 0.0,
-      'change': 0.0,
-      'changePercent': 0.0,
-      'bidPrices': <double>[],
-      'bidVolumes': <int>[],
-      'askPrices': <double>[],
-      'askVolumes': <int>[],
-    };
-  }
-
-  List<Map<String, dynamic>> _getDefaultHotStocks() {
-    return [
-      {'code': '600519', 'name': '贵州茅台', 'market': 'sh', 'currentPrice': 1315.0, 'changePercent': -0.7, 'change': -9.2, 'previousClose': 1324.2},
-      {'code': '601318', 'name': '中国平安', 'market': 'sh', 'currentPrice': 45.0, 'changePercent': 0.5, 'change': 0.22, 'previousClose': 44.78},
-      {'code': '600036', 'name': '招商银行', 'market': 'sh', 'currentPrice': 32.0, 'changePercent': 0.3, 'change': 0.1, 'previousClose': 31.9},
-      {'code': '000333', 'name': '美的集团', 'market': 'sz', 'currentPrice': 55.0, 'changePercent': 1.2, 'change': 0.66, 'previousClose': 54.34},
-      {'code': '000651', 'name': '格力电器', 'market': 'sz', 'currentPrice': 38.0, 'changePercent': -0.5, 'change': -0.19, 'previousClose': 38.19},
-    ];
-  }
-
-  List<Map<String, dynamic>> _defaultIndices() {
-    return [
-      {'code': '000001', 'name': '上证指数', 'currentPoint': 3100.0, 'change': 0, 'changePercent': 0},
-      {'code': '399001', 'name': '深证成指', 'currentPoint': 9500.0, 'change': 0, 'changePercent': 0},
-      {'code': '399006', 'name': '创业板指', 'currentPoint': 1800.0, 'change': 0, 'changePercent': 0},
-    ];
-  }
 }
