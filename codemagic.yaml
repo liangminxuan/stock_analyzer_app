@@ -4,12 +4,18 @@ workflows:
     max_build_duration: 30
     instance_type: mac_mini_m1
     environment:
-      flutter: 3.16.0
+      flutter: 3.24.5
       java: 17
     scripts:
       - name: Get dependencies
         script: |
           flutter pub get
+      - name: Analyze
+        script: |
+          flutter analyze
+      - name: Unit tests
+        script: |
+          flutter test
       - name: Build APK
         script: |
           flutter build apk --release

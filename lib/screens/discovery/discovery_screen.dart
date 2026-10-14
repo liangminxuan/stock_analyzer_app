@@ -956,8 +956,9 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
 
     try {
       // 先等待股票数据加载就绪
+      // 等待后端把全量行情准备好：90 秒足够，不再让用户干等 3 分钟
       final dataReady = await _discoveryService.waitForStockData(
-        timeout: const Duration(minutes: 3),
+        timeout: const Duration(seconds: 90),
       );
 
       if (!dataReady) {
@@ -970,7 +971,7 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
           });
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(
-              content: Text('股票数据加载失败，请稍后重试。首次使用需要加载A股全量数据，可能需要1-2分钟。'),
+              content: Text('行情数据尚未就绪，请稍后重试（服务端首次启动需要加载全量行情）。'),
               duration: Duration(seconds: 5),
             ),
           );

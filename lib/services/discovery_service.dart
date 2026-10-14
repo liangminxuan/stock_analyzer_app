@@ -15,7 +15,7 @@ class DiscoveryService {
 
   /// 检查股票数据是否已加载，如果未加载则等待
   /// 返回 true 表示数据已就绪，false 表示加载失败
-  Future<bool> waitForStockData({Duration timeout = const Duration(minutes: 3)}) async {
+  Future<bool> waitForStockData({Duration timeout = const Duration(seconds: 90)}) async {
     final deadline = DateTime.now().add(timeout);
 
     while (DateTime.now().isBefore(deadline)) {

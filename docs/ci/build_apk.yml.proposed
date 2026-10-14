@@ -1,0 +1,102 @@
+name: Build APK
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  packages: write
+
+jobs:
+  # 质量门禁：静态分析 + 单元测试（此前 CI 只打包，没有任何检查）
+  quality:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.24.5'
+          channel: 'stable'
+          cache: true
+
+      - name: Get dependencies
+        run: flutter pub get
+
+      - name: Analyze
+        run: flutter analyze
+
+      - name: Test
+        run: flutter test
+
+  backend-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+
+      # 测试用桩替换了 akshare/tickflow，这里只装必要依赖（更快）
+      - name: Install test dependencies
+        run: pip install flask flask-cors pandas requests pytest
+
+      - name: Run backend tests
+        run: python -m pytest backend/tests -q
+
+  build:
+    needs: [ quality, backend-tests ]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'zulu'
+          java-version: '17'
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.24.5'
+          channel: 'stable'
+          cache: true
+
+      - name: Get dependencies
+        run: flutter pub get
+
+      - name: Build APK
+        run: flutter build apk --release
+
+      - name: Upload APK to Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-apk
+          path: build/app/outputs/flutter-apk/app-release.apk
+
+      # 版本号以 pubspec.yaml 为唯一来源，避免 tag 与包内版本不一致
+      - name: Read version from pubspec
+        id: version
+        run: |
+          VERSION=$(grep '^version:' pubspec.yaml | sed 's/version: //' | cut -d'+' -f1)
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+
+      - name: Upload APK to GitHub Releases
+        uses: softprops/action-gh-release@v1
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        with:
+          files: build/app/outputs/flutter-apk/app-release.apk
+          tag_name: v${{ steps.version.outputs.version }}
+          name: Stock Analyzer v${{ steps.version.outputs.version }}
+          body: Automated build from GitHub Actions
+          draft: false
+          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

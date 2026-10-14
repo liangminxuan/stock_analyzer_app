@@ -39,7 +39,7 @@ echo "当前目录: $(pwd)"
 echo ""
 
 # 获取依赖
-echo "步骤 1/4: 获取Flutter依赖..."
+echo "步骤 1/5: 获取Flutter依赖..."
 flutter pub get
 if [ $? -ne 0 ]; then
     echo "错误: 获取依赖失败"
@@ -48,16 +48,28 @@ fi
 echo "✓ 依赖获取成功"
 echo ""
 
-# 分析代码
-echo "步骤 2/4: 分析代码..."
+# 分析代码（现在是硬门禁：分析不通过就不打包）
+echo "步骤 2/5: 静态分析..."
 flutter analyze
 if [ $? -ne 0 ]; then
-    echo "警告: 代码分析发现问题，继续构建..."
+    echo "错误: 静态分析未通过，请先修复后再构建"
+    exit 1
 fi
+echo "✓ 静态分析通过"
+echo ""
+
+# 单元测试
+echo "步骤 3/5: 单元测试..."
+flutter test
+if [ $? -ne 0 ]; then
+    echo "错误: 单元测试未通过"
+    exit 1
+fi
+echo "✓ 单元测试通过"
 echo ""
 
 # 构建APK
-echo "步骤 3/4: 构建Release APK..."
+echo "步骤 4/5: 构建Release APK..."
 flutter build apk --release
 
 if [ $? -ne 0 ]; then
@@ -75,7 +87,7 @@ echo ""
 echo "✓ APK构建成功!"
 echo ""
 
-# 显示APK信息
+# 显示APK信息（步骤 5/5）
 APK_PATH="build/app/outputs/flutter-apk/app-release.apk"
 if [ -f "$APK_PATH" ]; then
     APK_SIZE=$(ls -lh "$APK_PATH" | awk '{print $5}')

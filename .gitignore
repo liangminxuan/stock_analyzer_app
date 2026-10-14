@@ -17,3 +17,7 @@ android/local.properties
 
 # 生成文件
 **/android/**/GeneratedPluginRegistrant.java
+
+# Flutter 工具生成文件
+.flutter-plugins
+.flutter-plugins-dependencies
