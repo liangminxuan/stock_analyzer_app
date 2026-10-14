@@ -143,13 +143,14 @@ class StockProvider extends ChangeNotifier {
 
   /// 切换K线周期 - 传纯代码
   Future<void> switchPeriod(String period) async {
-    if (_currentStock == null) return;
+    final stock = _currentStock;
+    if (stock == null) return;
 
     _currentPeriod = period;
     notifyListeners();
 
     await fetchKLineData(
-      code: _currentStock!.code, // 传纯代码，API内部处理前缀
+      code: stock.code, // 传纯代码，API内部处理前缀
       period: period,
     );
   }
@@ -184,7 +185,9 @@ class StockProvider extends ChangeNotifier {
 
       _klineAnalysis = _generateAnalysis(klines, name);
     } catch (e) {
-      logDebug('[StockProvider] 分析失败: $e');
+      _klineAnalysis = null;
+      _error = describeError(e);
+      logError('[StockProvider] 分析失败', e);
     } finally {
       _isLoading = false;
       notifyListeners();
