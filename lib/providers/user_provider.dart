@@ -1,11 +1,46 @@
 import 'package:flutter/foundation.dart';
+
 import '../models/stock.dart';
+import '../services/user_data_store.dart';
+import '../utils/logger.dart';
 
 /// 用户状态管理
 class UserProvider extends ChangeNotifier {
+  UserProvider({UserDataStore? store})
+      : _store = store ?? SharedPrefsUserDataStore();
+
+  /// 本地持久化（此前自选股只存在内存里，杀进程即丢失）
+  final UserDataStore _store;
+
+  bool _initialized = false;
+  bool get initialized => _initialized;
+
   // 自选股列表
   final List<StockItem> _watchlist = [];
   List<StockItem> get watchlist => List.unmodifiable(_watchlist);
+
+  /// 从本地存储恢复数据（App 启动时调用）
+  Future<void> init() async {
+    try {
+      final items = await _store.loadWatchlist();
+      _watchlist
+        ..clear()
+        ..addAll(items.map(StockItem.fromJson));
+    } catch (e) {
+      logError('[UserProvider] 恢复自选股失败', e);
+    } finally {
+      _initialized = true;
+      notifyListeners();
+    }
+  }
+
+  Future<void> _persistWatchlist() async {
+    try {
+      await _store.saveWatchlist(_watchlist.map((item) => item.toJson()).toList());
+    } catch (e) {
+      logError('[UserProvider] 保存自选股失败', e);
+    }
+  }
 
   // 投资组合
   final List<PortfolioItem> _portfolio = [];
@@ -20,6 +55,7 @@ class UserProvider extends ChangeNotifier {
     if (!_watchlist.any((s) => s.code == stock.code)) {
       _watchlist.add(stock);
       notifyListeners();
+      _persistWatchlist();
     }
   }
 
@@ -27,6 +63,7 @@ class UserProvider extends ChangeNotifier {
   void removeFromWatchlist(String code) {
     _watchlist.removeWhere((s) => s.code == code);
     notifyListeners();
+    _persistWatchlist();
   }
 
   /// 判断是否已添加

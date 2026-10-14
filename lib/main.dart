@@ -32,7 +32,8 @@ class MyApp extends StatelessWidget {
           providers: [
             ChangeNotifierProvider(create: (_) => StockProvider()),
             ChangeNotifierProvider(create: (_) => MarketProvider()),
-            ChangeNotifierProvider(create: (_) => UserProvider()),
+            // init() 从本地存储恢复自选股，避免重启后丢失
+            ChangeNotifierProvider(create: (_) => UserProvider()..init()),
           ],
           child: MaterialApp(
             title: '股票分析助手',
