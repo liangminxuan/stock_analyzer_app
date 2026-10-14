@@ -5,6 +5,8 @@
 数据源优先级: 东方财富(AKShare) → 新浪 → TickFlow(免费层+蓝筹池)
 """
 
+import os
+
 from flask import Flask, jsonify, request
 from flask_cors import CORS
 import akshare as ak
@@ -14,28 +16,37 @@ import traceback
 import pandas as pd
 import time
 import threading
+from collections import OrderedDict
 from ai_engine import full_ai_analysis, calculate_technical_signals, calculate_risk_metrics
 
 app = Flask(__name__)
-CORS(app)
+# CORS：默认不允许跨域（App 为原生客户端，不需要 CORS）。
+# 如需给浏览器端调试，显式设置环境变量 ALLOWED_ORIGINS（逗号分隔）。
+_allowed_origins = [o.strip() for o in os.environ.get('ALLOWED_ORIGINS', '').split(',') if o.strip()]
+CORS(app, resources={r"/api/*": {"origins": _allowed_origins}})
 
-# 缓存：减少重复请求
-_cache = {}
-_cache_timeout = {}  # key -> 过期时间戳
+# 缓存：减少重复请求（带 TTL + 容量上限，避免无界增长）
+_cache = OrderedDict()          # key -> (过期时间戳, 数据)
+_CACHE_MAX_ENTRIES = 256
 
 def get_cached(key, timeout_seconds=300):
-    """获取缓存数据"""
-    import time
-    if key in _cache:
-        if time.time() < _cache_timeout.get(key, 0):
-            return _cache[key]
-    return None
+    """获取缓存数据（过期自动失效并清理）"""
+    entry = _cache.get(key)
+    if entry is None:
+        return None
+    expires_at, data = entry
+    if time.time() >= expires_at:
+        _cache.pop(key, None)
+        return None
+    _cache.move_to_end(key)
+    return data
 
 def set_cached(key, data, timeout_seconds=300):
-    """设置缓存"""
-    import time
-    _cache[key] = data
-    _cache_timeout[key] = time.time() + timeout_seconds
+    """设置缓存数据（超出容量时淘汰最久未使用的条目）"""
+    _cache[key] = (time.time() + timeout_seconds, data)
+    _cache.move_to_end(key)
+    while len(_cache) > _CACHE_MAX_ENTRIES:
+        _cache.popitem(last=False)
 
 
 # ========== 全局股票数据缓存 ==========
@@ -47,7 +58,13 @@ _stock_data_cache = {
     'load_error': None,
     'load_start_time': 0,
 }
-_tencent_enrich_cache = None  # 腾讯API补充缓存
+# 腾讯基本面补充缓存：{'ts': 时间戳, 'data': {code: {...}}}
+#
+# 修复点（AUDIT_REPORT.md P1-1）：旧实现只缓存时间戳，命中缓存时
+# 直接 return 未补充 PE/PB 的原始 df，导致同一筛选条件在 10 分钟内
+# 结果时好时坏。现在缓存数据本身，并在命中时回填。
+_tencent_fundamentals_cache = {'ts': 0.0, 'data': {}}
+_TENCENT_ENRICH_TTL = 600  # 秒
 
 def get_stock_data():
     """获取A股实时数据（带缓存，缓存2小时）
@@ -86,6 +103,23 @@ def get_stock_data():
 
 
 # ==================== 腾讯财经 API ====================
+
+def _to_float(value, default=0.0):
+    """安全地把腾讯接口字段转成 float。
+
+    腾讯偶发返回 '-'、'' 或 '--' 之类的占位符；旧代码直接 float() 抛异常，
+    会被外层 except 捕获导致整批（最多 50 只）股票数据全部丢失。
+    """
+    if value is None:
+        return default
+    try:
+        text = str(value).strip()
+        if not text or text in {'-', '--', 'null', 'None'}:
+            return default
+        return float(text)
+    except (TypeError, ValueError):
+        return default
+
 
 def _tencent_quote(codes):
     """
@@ -130,13 +164,13 @@ def _tencent_quote(codes):
                 code = key[2:]
                 all_results[code] = {
                     "name":         vals[1],
-                    "price":        float(vals[3]) if vals[3] else 0,
-                    "last_close":   float(vals[4]) if vals[4] else 0,
-                    "change_pct":   float(vals[32]) if vals[32] else 0,
-                    "turnover_pct": float(vals[38]) if vals[38] else 0,
-                    "pe_ttm":       float(vals[39]) if vals[39] else 0,
-                    "mcap_yi":      float(vals[44]) if vals[44] else 0,
-                    "pb":           float(vals[46]) if vals[46] else 0,
+                    "price":        _to_float(vals[3]),
+                    "last_close":   _to_float(vals[4]),
+                    "change_pct":   _to_float(vals[32]),
+                    "turnover_pct": _to_float(vals[38]),
+                    "pe_ttm":       _to_float(vals[39]),
+                    "mcap_yi":      _to_float(vals[44]),
+                    "pb":           _to_float(vals[46]),
                 }
         except Exception as e:
             print(f"[tencent_quote] 批次请求失败: {e}")
@@ -150,8 +184,6 @@ def _enrich_with_tencent(df):
     只补充缺失值，不覆盖已有有效数据。
     使用全局缓存避免重复请求腾讯API。
     """
-    global _tencent_enrich_cache
-
     if df is None or df.empty:
         return df
 
@@ -164,12 +196,11 @@ def _enrich_with_tencent(df):
         print(f"[enrich_tencent] 数据已完整(PE={pe_valid}/{total}, PB={pb_valid}/{total})，无需补充")
         return df
 
-    # 检查缓存：如果之前已经补充过，直接返回
-    if _tencent_enrich_cache is not None:
-        cache_age = time.time() - _tencent_enrich_cache
-        if cache_age < 600:  # 10分钟内不重复补充
-            print(f"[enrich_tencent] 跳过，上次补充于 {cache_age:.0f}s 前")
-            return df
+    # 命中缓存时用缓存数据回填（旧实现在这里直接返回未补充的 df）
+    cache_age = time.time() - _tencent_fundamentals_cache['ts']
+    if _tencent_fundamentals_cache['data'] and cache_age < _TENCENT_ENRICH_TTL:
+        print(f"[enrich_tencent] 命中缓存({cache_age:.0f}s 前)，回填 {len(_tencent_fundamentals_cache['data'])} 只股票")
+        return _apply_tencent_fundamentals(df, _tencent_fundamentals_cache['data'])
 
     # 获取代码列表
     code_col = 'code' if 'code' in df.columns else '代码'
@@ -195,10 +226,30 @@ def _enrich_with_tencent(df):
     print(f"[enrich_tencent] 腾讯API返回 {len(all_tencent)} 只股票数据")
 
     if not all_tencent:
-        _tencent_enrich_cache = time.time()  # 记录失败时间，避免频繁重试
+        print("[enrich_tencent] 腾讯接口无数据，本次不补充")
         return df
 
-    # 补充数据
+    # 写入缓存（缓存数据本身，供后续请求回填）
+    _tencent_fundamentals_cache['data'] = all_tencent
+    _tencent_fundamentals_cache['ts'] = time.time()
+
+    df = _apply_tencent_fundamentals(df, all_tencent)
+
+    # 同步更新全局数据缓存，后续请求直接受益
+    with _stock_data_lock:
+        if _stock_data_cache.get('df') is not None:
+            _stock_data_cache['df'] = df
+
+    return df
+
+
+def _apply_tencent_fundamentals(df, all_tencent):
+    # 把腾讯行情里的 PE/PB/市值/换手率回填到 df 的缺失字段，
+    # 只补缺失值，不覆盖已有有效数据。
+    code_col = 'code' if 'code' in df.columns else '代码'
+    if code_col not in df.columns:
+        return df
+
     enriched_pe = 0
     enriched_pb = 0
     enriched_mcap = 0
@@ -246,41 +297,36 @@ def _enrich_with_tencent(df):
                     df.at[idx, 'turnover'] = turn_val
 
     print(f"[enrich_tencent] 补充完成: PE+{enriched_pe}, PB+{enriched_pb}, 市值+{enriched_mcap}")
-
-    # 更新缓存时间
-    _tencent_enrich_cache = time.time()
-
-    # 更新全局缓存中的df（确保后续请求也能用到补充后的数据）
-    with _stock_data_lock:
-        if _stock_data_cache.get('df') is not None:
-            _stock_data_cache['df'] = df
-
     return df
 
 
-# ==================== 蓝筹池常量（消除重复定义）====================
+# ==================== 蓝筹池（仅用于兜底时给出名称）====================
+#
+# 注意：这里**不再内置 PE/PB/市值**。此前这些字段是手写常量，
+# 在真实数据源全部失败时会被当作真实基本面返回给客户端
+# （见 AUDIT_REPORT.md P2-1），现改为 None，让下游筛选自然排除这些行。
 
 BLUECHIP_POOL = {
-    '000001': {'name': '平安银行', 'pe': 6.5, 'pb': 0.6, 'cap': 2000},
-    '000002': {'name': '万科A', 'pe': 8.0, 'pb': 0.8, 'cap': 1500},
-    '600036': {'name': '招商银行', 'pe': 5.5, 'pb': 0.7, 'cap': 8000},
-    '601318': {'name': '中国平安', 'pe': 8.5, 'pb': 1.0, 'cap': 8000},
-    '600519': {'name': '贵州茅台', 'pe': 25.0, 'pb': 8.0, 'cap': 18000},
-    '000858': {'name': '五粮液', 'pe': 20.0, 'pb': 5.0, 'cap': 5000},
-    '002594': {'name': '比亚迪', 'pe': 30.0, 'pb': 6.0, 'cap': 7000},
-    '300750': {'name': '宁德时代', 'pe': 35.0, 'pb': 5.5, 'cap': 7000},
-    '601398': {'name': '工商银行', 'pe': 4.5, 'pb': 0.5, 'cap': 18000},
-    '601288': {'name': '农业银行', 'pe': 4.0, 'pb': 0.4, 'cap': 14000},
-    '600900': {'name': '长江电力', 'pe': 18.0, 'pb': 3.5, 'cap': 5000},
-    '601888': {'name': '中国中免', 'pe': 28.0, 'pb': 4.5, 'cap': 3000},
-    '000333': {'name': '美的集团', 'pe': 12.0, 'pb': 3.0, 'cap': 5000},
-    '002415': {'name': '海康威视', 'pe': 22.0, 'pb': 4.0, 'cap': 3500},
-    '300059': {'name': '东方财富', 'pe': 30.0, 'pb': 5.0, 'cap': 2500},
-    '600276': {'name': '恒瑞医药', 'pe': 40.0, 'pb': 6.5, 'cap': 3000},
-    '000568': {'name': '泸州老窖', 'pe': 18.0, 'pb': 5.5, 'cap': 2500},
-    '002304': {'name': '洋河股份', 'pe': 15.0, 'pb': 2.5, 'cap': 2000},
-    '601166': {'name': '兴业银行', 'pe': 5.0, 'pb': 0.6, 'cap': 4000},
-    '600887': {'name': '伊利股份', 'pe': 16.0, 'pb': 3.5, 'cap': 2000},
+    '000001': '平安银行',
+    '000002': '万科A',
+    '600036': '招商银行',
+    '601318': '中国平安',
+    '600519': '贵州茅台',
+    '000858': '五粮液',
+    '002594': '比亚迪',
+    '300750': '宁德时代',
+    '601398': '工商银行',
+    '601288': '农业银行',
+    '600900': '长江电力',
+    '601888': '中国中免',
+    '000333': '美的集团',
+    '002415': '海康威视',
+    '300059': '东方财富',
+    '600276': '恒瑞医药',
+    '000568': '泸州老窖',
+    '002304': '洋河股份',
+    '601166': '兴业银行',
+    '600887': '伊利股份',
 }
 
 
@@ -344,7 +390,7 @@ def _load_stock_data():
                     from tickflow import TickFlow
                     tf = TickFlow.free()
                     rows = []
-                    for code, info in BLUECHIP_POOL.items():
+                    for code, pool_name in BLUECHIP_POOL.items():
                         tf_code = f"{code}.SZ" if code.startswith(('0', '3')) else f"{code}.SH"
                         try:
                             kdf = tf.klines.get(tf_code, period="1d", as_dataframe=True)
@@ -354,22 +400,22 @@ def _load_stock_data():
                                 close = float(latest['close'])
                                 prev_close = float(prev['close'])
                                 pct_chg = round((close - prev_close) / prev_close * 100, 2)
-                                name = str(latest.get('name', info['name']))
+                                name = str(latest.get('name', pool_name))
                                 rows.append({
                                     '代码': code, '名称': name, '最新价': close,
-                                    '涨跌幅': pct_chg, '市盈率-动态': info['pe'],
-                                    '市净率': info['pb'], '总市值': info['cap'],
+                                    '涨跌幅': pct_chg, '市盈率-动态': None,
+                                    '市净率': None, '总市值': None,
                                     '换手率': None,
                                 })
                         except Exception:
                             rows.append({
-                                '代码': code, '名称': info['name'], '最新价': 0,
-                                '涨跌幅': 0, '市盈率-动态': info['pe'],
-                                '市净率': info['pb'], '总市值': info['cap'],
+                                '代码': code, '名称': pool_name, '最新价': 0,
+                                '涨跌幅': 0, '市盈率-动态': None,
+                                '市净率': None, '总市值': None,
                                 '换手率': None,
                             })
                     df = pd.DataFrame(rows)
-                    print(f"[get_stock_data] TickFlow+蓝筹池成功, {len(df)} 行, 耗时 {time.time()-start:.1f}s")
+                    print(f"[get_stock_data] TickFlow+蓝筹池兜底成功(基本面字段为空), {len(df)} 行, 耗时 {time.time()-start:.1f}s")
                 except Exception as e4:
                     errors.append(f"TickFlow: {str(e4)[:100]}")
                     print(f"[get_stock_data] TickFlow也失败: {e4}")
@@ -428,7 +474,6 @@ def health():
 @app.route('/api/stock/data_status', methods=['GET'])
 def stock_data_status():
     """检查股票数据缓存状态"""
-    import time
     with _stock_data_lock:
         is_loaded = _stock_data_cache['df'] is not None
         is_loading = _stock_data_cache['loading']
@@ -455,8 +500,15 @@ def stock_data_status():
 
 @app.route('/api/debug/test_akshare', methods=['GET'])
 def debug_test_akshare():
-    """测试 akshare 接口是否可用"""
-    import time
+    """测试 akshare 接口是否可用
+
+    默认关闭：该接口会触发全市场数据抓取，线上公开等于给了别人一个
+    放大器（见 AUDIT_REPORT.md P1-3）。需要时设置环境变量
+    ENABLE_DEBUG_ENDPOINTS=1 再重启。
+    """
+    if os.environ.get('ENABLE_DEBUG_ENDPOINTS') != '1':
+        return jsonify({'success': False, 'error': '调试接口已关闭'}), 404
+
     results = {}
 
     # 测试东方财富接口

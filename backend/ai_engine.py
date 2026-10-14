@@ -758,7 +758,7 @@ def full_ai_analysis(df: pd.DataFrame, metrics: Optional[Dict] = None) -> Dict:
         action_detail = "信号偏空但强度一般，建议控制仓位"
     else:
         action = "观望等待"
-        action_detail = "多空信号不明确，建议等待 clearer 信号"
+        action_detail = "多空信号不明确，建议等待更清晰的信号"
 
     result["action"] = {
         "recommendation": action,
