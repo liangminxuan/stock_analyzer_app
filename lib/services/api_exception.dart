@@ -15,3 +15,12 @@ class ApiException implements Exception {
   @override
   String toString() => 'ApiException: $message${cause == null ? '' : ' ($cause)'}';
 }
+
+/// 把任意异常转换为面向用户的中文提示。
+///
+/// Provider 层统一用它给 `error` 赋值，避免把 `DioException(...)` 之类的
+/// 原始信息直接显示给用户。
+String describeError(Object error) {
+  if (error is ApiException) return error.message;
+  return '网络异常，请检查网络后重试';
+}

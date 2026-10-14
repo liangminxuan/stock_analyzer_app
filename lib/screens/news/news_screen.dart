@@ -68,6 +68,7 @@ class _NewsScreenState extends State<NewsScreen> {
           page: 1,
           size: 20,
         );
+        if (!mounted) return;
         setState(() {
           _announcements = yesterdayResult;
           _isLoadingAnnouncements = false;
@@ -86,6 +87,7 @@ class _NewsScreenState extends State<NewsScreen> {
         _hasMore = result.length >= 20;
       });
     } catch (e) {
+      if (!mounted) return;
       setState(() {
         _announcementsError = '加载公告失败，请检查网络连接';
         _isLoadingAnnouncements = false;
@@ -105,11 +107,13 @@ class _NewsScreenState extends State<NewsScreen> {
 
     try {
       final results = await _apiService.searchStocks(keyword);
+      if (!mounted) return;
       setState(() {
         _searchResults = results;
         _isSearching = false;
       });
     } catch (e) {
+      if (!mounted) return;
       setState(() {
         _isSearching = false;
         _searchResults = [];
@@ -155,6 +159,7 @@ class _NewsScreenState extends State<NewsScreen> {
             size: 20,
           );
           if (pastResult.isNotEmpty) {
+            if (!mounted) return;
             setState(() {
               _announcements = pastResult;
               _isLoadingAnnouncements = false;
@@ -169,6 +174,7 @@ class _NewsScreenState extends State<NewsScreen> {
         _isLoadingAnnouncements = false;
       });
     } catch (e) {
+      if (!mounted) return;
       setState(() {
         _announcementsError = '搜索公告失败';
         _isLoadingAnnouncements = false;
@@ -647,12 +653,14 @@ class _StockAnnouncementSheetState extends State<_StockAnnouncementSheet> {
         widget.backendService.getStockNews(widget.code),
       ]);
 
+      if (!mounted) return;
       setState(() {
         _announcements = results[0];
         _news = results[1];
         _isLoading = false;
       });
     } catch (e) {
+      if (!mounted) return;
       setState(() {
         _error = '加载数据失败';
         _isLoading = false;
@@ -883,11 +891,13 @@ class _AnnouncementDetailSheetState extends State<_AnnouncementDetailSheet> {
         stockName: widget.stockName,
       );
 
+      if (!mounted) return;
       setState(() {
         _detailData = result;
         _isLoading = false;
       });
     } catch (e) {
+      if (!mounted) return;
       setState(() {
         _error = '加载公告详情失败';
         _isLoading = false;

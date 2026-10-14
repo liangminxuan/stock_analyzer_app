@@ -37,11 +37,13 @@ class _FinanceScreenState extends State<FinanceScreen> {
 
     try {
       final results = await _apiService.searchStocks(keyword);
+      if (!mounted) return;
       setState(() {
         _searchResults = results;
         _isSearching = false;
       });
     } catch (e) {
+      if (!mounted) return;
       setState(() {
         _isSearching = false;
         _searchResults = [];
@@ -254,11 +256,13 @@ class _StockFinanceSheetState extends State<_StockFinanceSheet> {
   Future<void> _loadData() async {
     try {
       final result = await widget.backendService.getStockFinancial(widget.code);
+      if (!mounted) return;
       setState(() {
         _financialData = result;
         _isLoading = false;
       });
     } catch (e) {
+      if (!mounted) return;
       setState(() {
         _error = '加载财报数据失败';
         _isLoading = false;

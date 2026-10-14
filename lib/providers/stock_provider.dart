@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../models/stock.dart';
 import '../models/kline.dart';
+import '../services/api_exception.dart';
 import '../services/api_service.dart';
 
 import '../utils/logger.dart';
@@ -42,8 +43,9 @@ class StockProvider extends ChangeNotifier {
       _currentStock = Stock.fromQuote(data);
       logDebug('[StockProvider] 成功: ${_currentStock?.name} ${_currentStock?.currentPrice}');
     } catch (e) {
-      _error = '加载失败: $e';
-      logDebug('[StockProvider] 详情失败: $e');
+      _currentStock = null;
+      _error = describeError(e);
+      logError('[StockProvider] 详情失败', e);
     } finally {
       _isLoading = false;
       notifyListeners();
@@ -85,7 +87,9 @@ class StockProvider extends ChangeNotifier {
       _currentPeriod = period;
       logDebug('[StockProvider] K线处理完成，${klines.length} 条');
     } catch (e) {
-      logDebug('[StockProvider] K线失败: $e');
+      _klineData = <KLineData>[];
+      _error = describeError(e);
+      logError('[StockProvider] K线失败', e);
     } finally {
       _isLoading = false;
       notifyListeners();

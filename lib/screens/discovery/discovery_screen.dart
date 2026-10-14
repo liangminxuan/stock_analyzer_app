@@ -988,6 +988,7 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
         count: 20,
       );
 
+      if (!mounted) return;
       if (result['success'] == true && (result['data'] as List).isNotEmpty) {
         setState(() {
           _screenResults = List<Map<String, dynamic>>.from(result['data']);
@@ -1010,6 +1011,7 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
           size: 20,
         );
 
+        if (!mounted) return;
         setState(() {
           _screenResults = List<Map<String, dynamic>>.from(screenResult['data'] ?? []);
           _totalResults = screenResult['total'] ?? _screenResults.length;
@@ -1018,6 +1020,7 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
       }
     } catch (e) {
       logDebug('选股失败: $e');
+      if (!mounted) return;
       setState(() {
         _screenResults = [];
         _totalResults = 0;

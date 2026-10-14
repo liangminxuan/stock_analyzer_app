@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../models/stock.dart';
+import '../services/api_exception.dart';
 import '../services/api_service.dart';
 
 import '../utils/logger.dart';
@@ -45,8 +46,9 @@ class MarketProvider extends ChangeNotifier {
         );
       }).toList();
     } catch (e) {
-      _error = '加载失败: $e';
-      logDebug('[MarketProvider] 获取指数失败: $e');
+      _indices = <MarketIndex>[];
+      _error = describeError(e);
+      logError('[MarketProvider] 获取指数失败', e);
     } finally {
       _isLoading = false;
       notifyListeners();
@@ -87,8 +89,9 @@ class MarketProvider extends ChangeNotifier {
 
       notifyListeners();
     } catch (e) {
-      logDebug('[MarketProvider] 获取热门股票失败: $e');
-      _error = '获取热门股票失败: $e';
+      _hotStocks = <Stock>[];
+      _error = describeError(e);
+      logError('[MarketProvider] 获取热门股票失败', e);
       notifyListeners();
     }
   }

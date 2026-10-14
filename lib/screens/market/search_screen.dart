@@ -50,12 +50,14 @@ class _SearchScreenState extends State<SearchScreen> {
 
     try {
       final results = await _apiService.searchStocks(keyword);
+      if (!mounted) return;
       setState(() {
         _searchResults = results;
         _isLoading = false;
         _hasSearched = true;
       });
     } catch (e) {
+      if (!mounted) return;
       setState(() {
         _isLoading = false;
         _hasSearched = true;
