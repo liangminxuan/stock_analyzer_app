@@ -2,6 +2,23 @@
 
 行情/公告/新闻/财报/选股的聚合服务，前端通过 `lib/services/backend_service.dart` 调用。
 
+## 代码结构（分层）
+
+```
+backend/
+├── app.py              # 装配层：创建 Flask、注册蓝图、CORS（39 行）
+├── settings.py         # 配置：所有环境变量集中在这里
+├── cache_store.py      # 进程内 TTL/LRU 缓存 + 单 IP 滑动窗口限流
+├── market_data.py      # 行情数据层：多数据源加载、腾讯基本面补充、快照、后台刷新
+├── routes_market.py    # 行情路由：/health、data_status、screen、recommend、industries
+├── routes_content.py   # 内容路由：公告/新闻/财报/综合分析/公告解读/AI 评分/调试
+├── ai_engine.py        # 量化规则引擎（技术指标 + 基本面评分，非 LLM）
+└── tests/              # pytest（39 个用例）
+```
+
+依赖方向是单向的：`app → routes_* → market_data → settings`，
+`ai_engine` 只被路由层调用，不反向依赖。
+
 ## 数据流（P2-2 改造后）
 
 ```

@@ -40,10 +40,12 @@ _install_stub('akshare', stock_zh_a_spot_em=_missing, stock_zh_a_spot=_missing)
 _install_stub('tickflow', TickFlow=types.SimpleNamespace(free=_missing))
 
 import app as backend_app  # noqa: E402  (必须在桩安装之后导入)
+import cache_store  # noqa: E402
+import market_data  # noqa: E402
 
 
 def _reset_stock_cache():
-    backend_app._stock_data_cache.update({
+    market_data._stock_data_cache.update({
         'df': None,
         'last_update': 0,
         'loading': False,
@@ -62,13 +64,13 @@ def client():
 @pytest.fixture(autouse=True)
 def reset_state():
     """每个用例前后都清理全局缓存，避免用例互相污染"""
-    backend_app._cache.clear()
-    backend_app._tencent_fundamentals_cache['ts'] = 0.0
-    backend_app._tencent_fundamentals_cache['data'] = {}
-    backend_app._rate_limit_hits.clear()
+    cache_store._cache.clear()
+    market_data._tencent_fundamentals_cache['ts'] = 0.0
+    market_data._tencent_fundamentals_cache['data'] = {}
+    cache_store._rate_limit_hits.clear()
     _reset_stock_cache()
     yield
-    backend_app._cache.clear()
+    cache_store._cache.clear()
     _reset_stock_cache()
 
 

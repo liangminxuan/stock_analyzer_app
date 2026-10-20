@@ -11,7 +11,7 @@ AI 对冲基金选股引擎 - 基于 virattt/ai-hedge-fund 项目策略
 
 import numpy as np
 import pandas as pd
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, Optional, Tuple
 
 
 # ==================== 辅助技术指标函数 ====================
@@ -712,7 +712,6 @@ def full_ai_analysis(df: pd.DataFrame, metrics: Optional[Dict] = None) -> Dict:
 
     # 4. 综合评分
     tech_score = result["technical"]["overall"]["score"]  # -1 to 1
-    tech_conf = result["technical"]["overall"]["confidence"]
 
     # 综合信号（技术 60% + 基本面 40%）
     if result["fundamental"]:

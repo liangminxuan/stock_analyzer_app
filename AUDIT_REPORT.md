@@ -480,7 +480,7 @@ git ls-files | wc -l                       # → 635 → 131
 | P1-8 | 版本/发布混乱 | 部分 | CI tag 改读 `pubspec.yaml`；补 LICENSE、CHANGELOG | 文件已入库 |
 | P1-9 | 签名 / 明文流量 | 部分 | release 支持 `key.properties`；关闭全局明文改 `network_security_config.xml` | 配置已入库 |
 | P2-1 | 无 SLA / 假基本面 | 部分 | `BLUECHIP_POOL` 的假 PE/PB/市值清空 | `test_tencent_and_endpoints.py` |
-| P2-2 | 后端请求内加载 | 已修 | 后台定时预拉取 + 快照落盘 + 请求只读缓存；单 worker 多线程 | `test_background_refresh.py` + 端到端实测 |
+| P2-2 | 后端请求内加载 | 已修 | 后台定时预拉取 + 快照 + 只读缓存；并拆分为 settings/cache_store/market_data/routes_*（`app.py` 仅 39 行装配） | `test_background_refresh.py` + 端到端实测 |
 | P2-3 | 可观测性 | 未做 | 需接入 Sentry/Crashlytics 等外部服务 | — |
 | P2-4 | i18n / 无障碍 | 未做 | 属产品功能，非缺陷 | — |
 | P2-5 | 未用依赖 / 非懒加载 | 部分 | 移除 `fl_chart`；`shouldRepaint` 恒真已修 | analyze 0 |
@@ -490,11 +490,10 @@ git ls-files | wc -l                       # → 635 → 131
 
 1. **`applicationId` 仍为 `com.example.stock_analyzer_app`** —— 改包名会导致已安装用户无法覆盖升级，需产品确认时机。
 2. **应用图标只有 `mipmap-hdpi`** —— 需要设计资源，无法在代码层解决。
-3. **后端未拆分分层**（单文件 1700+ 行）—— 阻塞问题已由 P2-2 解决，分层属于可维护性改进。
-4. **错误上报与埋点** —— 需接入外部账号。
-5. **`get`(GetX) 与 `provider` 并存** —— 仅 AI 分析页使用，统一需重构该页。
-6. **`.github/workflows/build_apk.yml`** —— 推送令牌无 `workflows` 权限，门禁改动以 `docs/ci/build_apk.yml.proposed` 提供。
-7. **`lib/config/constants.dart`、`lib/models/{financial,announcement}.dart`** —— 共 1450 行仍未被引用（可编译、无缺陷）；建议随财报/公告页重构一并接入或删除。
+3. **错误上报与埋点** —— 需接入外部账号。
+4. **`get`(GetX) 与 `provider` 并存** —— 仅 AI 分析页使用，统一需重构该页。
+5. **`.github/workflows/build_apk.yml`** —— 推送令牌无 `workflows` 权限，门禁改动以 `docs/ci/build_apk.yml.proposed` 提供。
+6. **`lib/config/constants.dart`、`lib/models/{financial,announcement}.dart`** —— 共 1450 行仍未被引用（可编译、无缺陷）；建议随财报/公告页重构一并接入或删除。
 
 > 一句话总结：**P0 全部修复；P1 的 6 项缺陷全部修复，另 3 项工程/配置改进已完成一部分；
 > P2 中属于缺陷的部分（假基本面、未用依赖、文档脱节）已修，其余属架构与产品决策。**

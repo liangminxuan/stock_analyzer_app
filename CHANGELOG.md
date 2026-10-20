@@ -20,6 +20,8 @@
 - K线获取失败不再静默：Provider 会清空数据并暴露错误（P1-5）
 - 13 处 `await` 之后补 `mounted` 守卫，避免页面销毁后 `setState` 崩溃（P1-5）
 - 选股等待时长从 3 分钟降到 90 秒，并给出明确提示
+- **后端拆分为分层结构**：`app.py`（装配，39 行）/ `settings.py` / `cache_store.py` /
+  `market_data.py` / `routes_market.py` / `routes_content.py`，依赖方向单向
 - **后端行情改为“后台定时预拉取 + 请求只读缓存”**（P2-2）：
   - 请求路径不再阻塞：冷启动瞬间返回“行情数据正在准备中 + retry_after”，
     实测 `/api/stock/screen` 从 **120.46s → 0.002s**

@@ -7,34 +7,34 @@
 import time
 
 import pandas as pd
-import pytest
 
-import app as backend_app
+import cache_store
+import market_data
 
 
 class TestTTLCache:
     def test_set_then_get(self):
-        backend_app.set_cached('k', {'v': 1}, timeout_seconds=60)
-        assert backend_app.get_cached('k') == {'v': 1}
+        cache_store.set_cached('k', {'v': 1}, timeout_seconds=60)
+        assert cache_store.get_cached('k') == {'v': 1}
 
     def test_expired_entry_is_removed(self):
-        backend_app.set_cached('k', 'v', timeout_seconds=0)
+        cache_store.set_cached('k', 'v', timeout_seconds=0)
         time.sleep(0.01)
-        assert backend_app.get_cached('k') is None
+        assert cache_store.get_cached('k') is None
         # 过期条目应被清理，而不是留在字典里
-        assert 'k' not in backend_app._cache
+        assert 'k' not in cache_store._cache
 
     def test_missing_key_returns_none(self):
-        assert backend_app.get_cached('nope') is None
+        assert cache_store.get_cached('nope') is None
 
     def test_cache_is_bounded_by_lru(self):
-        for i in range(backend_app._CACHE_MAX_ENTRIES + 10):
-            backend_app.set_cached(f'k{i}', i, timeout_seconds=600)
+        for i in range(cache_store._CACHE_MAX_ENTRIES + 10):
+            cache_store.set_cached(f'k{i}', i, timeout_seconds=600)
 
-        assert len(backend_app._cache) == backend_app._CACHE_MAX_ENTRIES
+        assert len(cache_store._cache) == cache_store._CACHE_MAX_ENTRIES
         # 最早写入的已被淘汰，最新的还在
-        assert backend_app.get_cached('k0') is None
-        assert backend_app.get_cached(f'k{backend_app._CACHE_MAX_ENTRIES + 9}') is not None
+        assert cache_store.get_cached('k0') is None
+        assert cache_store.get_cached(f'k{cache_store._CACHE_MAX_ENTRIES + 9}') is not None
 
 
 def _unfilled_df():
@@ -59,10 +59,10 @@ class TestEnrichCacheRegression:
                 '000001': {'pe_ttm': 6.5, 'pb': 0.6, 'mcap_yi': 2000.0, 'turnover_pct': 1.2},
             }
 
-        monkeypatch.setattr(backend_app, '_tencent_quote', fake_quote)
+        monkeypatch.setattr(market_data, '_tencent_quote', fake_quote)
 
-        first = backend_app._enrich_with_tencent(_unfilled_df())
-        second = backend_app._enrich_with_tencent(_unfilled_df())
+        first = market_data._enrich_with_tencent(_unfilled_df())
+        second = market_data._enrich_with_tencent(_unfilled_df())
 
         # 只请求了一次腾讯接口（第二次命中缓存）
         assert len(calls) == 1
@@ -75,22 +75,22 @@ class TestEnrichCacheRegression:
 
     def test_existing_values_are_not_overwritten(self, monkeypatch):
         monkeypatch.setattr(
-            backend_app, '_tencent_quote',
+            market_data, '_tencent_quote',
             lambda codes: {'600519': {'pe_ttm': 99.0, 'pb': 99.0, 'mcap_yi': 99.0, 'turnover_pct': 9.9}},
         )
         df = _unfilled_df()
         df.loc[0, 'pe'] = 12.5
 
-        result = backend_app._enrich_with_tencent(df)
+        result = market_data._enrich_with_tencent(df)
 
         assert result.loc[0, 'pe'] == 12.5   # 已有有效值不被覆盖
         assert result.loc[0, 'pb'] == 99.0   # 缺失值被补上
 
     def test_empty_tencent_response_keeps_df_untouched(self, monkeypatch):
-        monkeypatch.setattr(backend_app, '_tencent_quote', lambda codes: {})
+        monkeypatch.setattr(market_data, '_tencent_quote', lambda codes: {})
 
-        result = backend_app._enrich_with_tencent(_unfilled_df())
+        result = market_data._enrich_with_tencent(_unfilled_df())
 
         assert pd.isna(result.loc[0, 'pe'])
         # 没有数据时不应写入“假”缓存
-        assert backend_app._tencent_fundamentals_cache['data'] == {}
+        assert market_data._tencent_fundamentals_cache['data'] == {}

@@ -9,7 +9,9 @@
 import pandas as pd
 import pytest
 
-import app as backend_app
+import market_data
+import routes_content
+import routes_market
 
 
 def _tencent_line(code, name, price, pe, pb, mcap, fields=60):
@@ -41,7 +43,7 @@ class TestTencentQuoteParsing:
             lambda url, timeout=None, headers=None: _FakeResponse(payload),
         )
 
-        result = backend_app._tencent_quote(['600519'])
+        result = market_data._tencent_quote(['600519'])
 
         assert '600519' in result
         quote = result['600519']
@@ -59,14 +61,14 @@ class TestTencentQuoteParsing:
             lambda url, timeout=None, headers=None: _FakeResponse(payload),
         )
 
-        result = backend_app._tencent_quote(['600519'])
+        result = market_data._tencent_quote(['600519'])
 
         assert '600519' in result
         assert result['600519']['pe_ttm'] == 0.0
         assert result['600519']['price'] == pytest.approx(1274.89)
 
     def test_empty_codes_returns_empty(self):
-        assert backend_app._tencent_quote([]) == {}
+        assert market_data._tencent_quote([]) == {}
 
     def test_request_failure_returns_empty_without_raising(self, monkeypatch):
         def boom(*_args, **_kwargs):
@@ -74,7 +76,7 @@ class TestTencentQuoteParsing:
 
         monkeypatch.setattr('requests.get', boom)
 
-        assert backend_app._tencent_quote(['600519']) == {}
+        assert market_data._tencent_quote(['600519']) == {}
 
 
 class TestDebugEndpointGuard:
@@ -89,11 +91,11 @@ class TestDebugEndpointGuard:
     def test_debug_endpoint_available_when_explicitly_enabled(self, client, monkeypatch):
         monkeypatch.setenv('ENABLE_DEBUG_ENDPOINTS', '1')
         monkeypatch.setattr(
-            backend_app.ak, 'stock_zh_a_spot_em',
+            routes_content.ak, 'stock_zh_a_spot_em',
             lambda: pd.DataFrame([{'代码': '600519', '名称': '贵州茅台'}]),
         )
         monkeypatch.setattr(
-            backend_app.ak, 'stock_zh_a_spot',
+            routes_content.ak, 'stock_zh_a_spot',
             lambda: pd.DataFrame([{'代码': '600519'}]),
         )
 
@@ -111,7 +113,7 @@ class TestHealthAndErrors:
         assert response.get_json()['status'] == 'ok'
 
     def test_screen_returns_error_when_data_unavailable(self, client, monkeypatch):
-        monkeypatch.setattr(backend_app, 'get_stock_data', lambda: None)
+        monkeypatch.setattr(routes_market, 'get_stock_data', lambda: None)
 
         response = client.get('/api/stock/screen?pe_max=20')
         body = response.get_json()
@@ -120,7 +122,7 @@ class TestHealthAndErrors:
         assert body['data'] == []
 
     def test_recommend_returns_error_when_data_unavailable(self, client, monkeypatch):
-        monkeypatch.setattr(backend_app, 'get_stock_data', lambda: None)
+        monkeypatch.setattr(routes_market, 'get_stock_data', lambda: None)
 
         response = client.get('/api/stock/recommend?count=5')
         body = response.get_json()
@@ -138,5 +140,5 @@ class TestHealthAndErrors:
 class TestFallbackData:
     def test_bluechip_pool_has_no_fabricated_fundamentals(self):
         """兜底池只应提供名称，不应再内置 PE/PB/市值（审计 P2-1）。"""
-        for code, value in backend_app.BLUECHIP_POOL.items():
+        for code, value in market_data.BLUECHIP_POOL.items():
             assert isinstance(value, str), f'{code} 的兜底值应只是名称'
