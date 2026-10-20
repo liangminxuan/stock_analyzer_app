@@ -106,7 +106,14 @@ class DiscoveryService {
           'filters': data['filters'] ?? {},
         };
       }
-      return {'success': false, 'data': [], 'total': 0};
+      // 后端会返回“行情数据正在准备中”等可读原因，透传给界面
+      return {
+        'success': false,
+        'data': <Map<String, dynamic>>[],
+        'total': 0,
+        'error': data['error'] ?? '选股失败，请稍后重试',
+        'retry_after': data['retry_after'],
+      };
     } catch (e) {
       logDebug('[DiscoveryService] 筛选股票失败: $e');
       return {'success': false, 'data': [], 'total': 0, 'error': e.toString()};
@@ -135,7 +142,12 @@ class DiscoveryService {
           'data': List<Map<String, dynamic>>.from(data['data'] ?? []),
         };
       }
-      return {'success': false, 'data': [], 'count': 0};
+      return {
+        'success': false,
+        'data': <Map<String, dynamic>>[],
+        'count': 0,
+        'error': data['error'] ?? '智能推荐失败，请稍后重试',
+      };
     } catch (e) {
       logDebug('[DiscoveryService] 推荐股票失败: $e');
       return {'success': false, 'data': [], 'count': 0, 'error': e.toString()};

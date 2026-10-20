@@ -7,6 +7,7 @@
 
 import os
 import sys
+import tempfile
 import types
 
 import pytest
@@ -14,6 +15,10 @@ import pytest
 BACKEND_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if BACKEND_DIR not in sys.path:
     sys.path.insert(0, BACKEND_DIR)
+
+# 测试环境：关闭后台刷新线程、把快照写到临时目录（必须在导入 app 之前设置）
+os.environ['DISABLE_BACKGROUND_REFRESH'] = '1'
+os.environ.setdefault('STOCK_SNAPSHOT_DIR', tempfile.mkdtemp(prefix='stock-snapshot-'))
 
 
 def _install_stub(name, **attrs):
@@ -37,6 +42,16 @@ _install_stub('tickflow', TickFlow=types.SimpleNamespace(free=_missing))
 import app as backend_app  # noqa: E402  (必须在桩安装之后导入)
 
 
+def _reset_stock_cache():
+    backend_app._stock_data_cache.update({
+        'df': None,
+        'last_update': 0,
+        'loading': False,
+        'load_error': None,
+        'load_start_time': 0,
+    })
+
+
 @pytest.fixture
 def client():
     backend_app.app.config.update(TESTING=True)
@@ -50,12 +65,22 @@ def reset_state():
     backend_app._cache.clear()
     backend_app._tencent_fundamentals_cache['ts'] = 0.0
     backend_app._tencent_fundamentals_cache['data'] = {}
-    backend_app._stock_data_cache.update({
-        'df': None,
-        'last_update': 0,
-        'loading': False,
-        'load_error': None,
-        'load_start_time': 0,
-    })
+    backend_app._rate_limit_hits.clear()
+    _reset_stock_cache()
     yield
     backend_app._cache.clear()
+    _reset_stock_cache()
+
+
+@pytest.fixture
+def sample_df():
+    import pandas as pd
+
+    return pd.DataFrame([
+        {'code': '600519', 'name': '贵州茅台', 'price': 1274.89,
+         'change_percent': -1.02, 'pe': 22.5, 'pb': 7.8,
+         'market_cap': 16000.0, 'turnover': 0.8},
+        {'code': '000001', 'name': '平安银行', 'price': 11.2,
+         'change_percent': 0.5, 'pe': 6.5, 'pb': 0.6,
+         'market_cap': 2000.0, 'turnover': 1.1},
+    ])

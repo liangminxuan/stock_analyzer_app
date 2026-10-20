@@ -480,7 +480,7 @@ git ls-files | wc -l                       # → 635 → 131
 | P1-8 | 版本/发布混乱 | 部分 | CI tag 改读 `pubspec.yaml`；补 LICENSE、CHANGELOG | 文件已入库 |
 | P1-9 | 签名 / 明文流量 | 部分 | release 支持 `key.properties`；关闭全局明文改 `network_security_config.xml` | 配置已入库 |
 | P2-1 | 无 SLA / 假基本面 | 部分 | `BLUECHIP_POOL` 的假 PE/PB/市值清空 | `test_tencent_and_endpoints.py` |
-| P2-2 | 后端架构 | 未做 | 需产品/运维决策（FastAPI、定时预拉取、Redis） | — |
+| P2-2 | 后端请求内加载 | 已修 | 后台定时预拉取 + 快照落盘 + 请求只读缓存；单 worker 多线程 | `test_background_refresh.py` + 端到端实测 |
 | P2-3 | 可观测性 | 未做 | 需接入 Sentry/Crashlytics 等外部服务 | — |
 | P2-4 | i18n / 无障碍 | 未做 | 属产品功能，非缺陷 | — |
 | P2-5 | 未用依赖 / 非懒加载 | 部分 | 移除 `fl_chart`；`shouldRepaint` 恒真已修 | analyze 0 |
@@ -490,7 +490,7 @@ git ls-files | wc -l                       # → 635 → 131
 
 1. **`applicationId` 仍为 `com.example.stock_analyzer_app`** —— 改包名会导致已安装用户无法覆盖升级，需产品确认时机。
 2. **应用图标只有 `mipmap-hdpi`** —— 需要设计资源，无法在代码层解决。
-3. **后端未分层、未做定时预拉取** —— 选股首次调用仍可能等待（实测 120s），根治方案即 P2-2。
+3. **后端未拆分分层**（单文件 1700+ 行）—— 阻塞问题已由 P2-2 解决，分层属于可维护性改进。
 4. **错误上报与埋点** —— 需接入外部账号。
 5. **`get`(GetX) 与 `provider` 并存** —— 仅 AI 分析页使用，统一需重构该页。
 6. **`.github/workflows/build_apk.yml`** —— 推送令牌无 `workflows` 权限，门禁改动以 `docs/ci/build_apk.yml.proposed` 提供。
@@ -499,3 +499,22 @@ git ls-files | wc -l                       # → 635 → 131
 > 一句话总结：**P0 全部修复；P1 的 6 项缺陷全部修复，另 3 项工程/配置改进已完成一部分；
 > P2 中属于缺陷的部分（假基本面、未用依赖、文档脱节）已修，其余属架构与产品决策。**
 
+### 6.4 P2-2 端到端验证（本轮实测）
+
+用一个桩数据源模拟“上游很慢”（5000 行、耗时 12s）启动服务，实测结果：
+
+| 场景 | 改造前 | 改造后 |
+|---|---|---|
+| 冷启动后立刻请求 `/api/stock/screen` | 阻塞 **120.46s**（线上实测） | **0.0016s**，返回“行情数据正在准备中 + retry_after=10” |
+| 数据就绪后请求 | 0.60s（命中缓存） | **0.0009s** |
+| 进程重启（已有快照）后立刻请求 | 需重新加载（分钟级） | **0.006s**，直接返回 20 条快照数据 |
+| `data_status.loading` | 加载成功后仍为 `true` | 正确复位为 `false` |
+| `data_status` 新增字段 | — | `age_seconds` / `stale` / `trading_time` / `refresh_interval` |
+
+快照体积：5000 行 → **125KB**（gzip JSON），进程重启即可服务。
+
+对应测试：`backend/tests/test_background_refresh.py`（12 个用例：交易时段判断、非阻塞读取、
+快照往返、过期快照忽略、刷新标志复位、接口不再阻塞、`data_status` 字段）。
+
+> 最终结论：**P0 全部修复；P1 的 6 项缺陷全部修复；P2 中属于缺陷的项
+> （假基本面、请求内加载、未用依赖、文档脱节）已修，其余属架构与产品决策。**

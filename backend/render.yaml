@@ -3,9 +3,14 @@ services:
     name: stock-backend
     runtime: python
     buildCommand: pip install -r requirements.txt
-    startCommand: gunicorn --bind 0.0.0.0:$PORT --workers 2 --timeout 120 app:app
+    # 见根目录 render.yaml 的说明：单 worker + 多线程，共享进程内快照缓存
+    startCommand: gunicorn --bind 0.0.0.0:$PORT --workers 1 --threads 8 --timeout 60 app:app
     envVars:
       - key: PYTHON_VERSION
         value: 3.10.12
       - key: PORT
         value: 5000
+      - key: STOCK_DATA_REFRESH_SECONDS
+        value: 60
+      - key: STOCK_DATA_OFFHOURS_REFRESH_SECONDS
+        value: 1800

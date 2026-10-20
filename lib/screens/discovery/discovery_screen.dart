@@ -1018,6 +1018,14 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
           _totalResults = screenResult['total'] ?? _screenResults.length;
           _loadingMessage = '';
         });
+
+        // 选股失败（例如后端行情还在准备）时给出明确提示，而不是空列表
+        if (screenResult['success'] != true && _screenResults.isEmpty && mounted) {
+          final message = screenResult['error'] as String? ?? '选股失败，请稍后重试';
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text(message), duration: const Duration(seconds: 4)),
+          );
+        }
       }
     } catch (e) {
       logDebug('选股失败: $e');

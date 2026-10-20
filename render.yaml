@@ -8,12 +8,31 @@ services:
     region: singapore
     rootDir: backend
     buildCommand: pip install -r requirements.txt
-    startCommand: gunicorn --bind 0.0.0.0:$PORT --workers 2 --timeout 120 app:app
+    # 1 worker + 多线程：行情快照缓存在进程内，多 worker 会各存一份
+    # （内存翻倍 + 重复拉取上游），线程数保证并发。
+    startCommand: gunicorn --bind 0.0.0.0:$PORT --workers 1 --threads 8 --timeout 60 app:app
     healthCheckPath: /health
     envVars:
       - key: PYTHON_VERSION
         value: 3.10.12
       - key: PORT
         value: 5000
-      - key: GUNICORN_CMD_ARGS
-        value: "--bind=0.0.0.0:$PORT"
+      # 交易时段每 60s 刷新一次，非交易时段 30 分钟
+      - key: STOCK_DATA_REFRESH_SECONDS
+        value: 60
+      - key: STOCK_DATA_OFFHOURS_REFRESH_SECONDS
+        value: 1800
+      # 快照最长可用 24 小时（进程重启后先顶上，再后台刷新）
+      - key: STOCK_SNAPSHOT_MAX_AGE_SECONDS
+        value: 86400
+      # 限流（单 IP，滑动窗口）
+      - key: RATE_LIMIT_MAX_REQUESTS
+        value: 60
+      - key: RATE_LIMIT_WINDOW_SECONDS
+        value: 60
+      # 跨域默认关闭；浏览器端调试时填具体域名
+      - key: ALLOWED_ORIGINS
+        value: ''
+      # 调试接口默认关闭
+      - key: ENABLE_DEBUG_ENDPOINTS
+        value: '0'

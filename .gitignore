@@ -25,3 +25,6 @@ android/local.properties
 # Python 生成文件
 __pycache__/
 *.pyc
+
+# 后端行情快照
+backend/.cache/

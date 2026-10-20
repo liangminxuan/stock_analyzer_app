@@ -5,7 +5,10 @@
 数据源优先级: 东方财富(AKShare) → 新浪 → TickFlow(免费层+蓝筹池)
 """
 
+import gzip
 import os
+
+from datetime import timezone
 
 from flask import Flask, jsonify, request
 from flask_cors import CORS
@@ -110,40 +113,60 @@ _stock_data_cache = {
 _tencent_fundamentals_cache = {'ts': 0.0, 'data': {}}
 _TENCENT_ENRICH_TTL = 600  # 秒
 
-def get_stock_data():
-    """获取A股实时数据（带缓存，缓存2小时）
-    如果数据正在加载中，会等待加载完成（最多120秒）
+def get_stock_data(wait_seconds=0):
+    """获取A股行情快照（**请求路径不再阻塞**）。
+
+    改造前（AUDIT_REPORT.md P2-2）：首次请求会在请求线程里等全量行情加载，
+    实测 `/api/stock/screen` 耗时 **120.46s**，期间还占住一个 gunicorn worker。
+
+    现在：
+    - 数据由后台刷新线程（`start_background_refresh()`）定时更新；
+    - 请求进来只读缓存，没有就立刻返回 None，由接口给出“准备中”的提示；
+    - 只有显式传 `wait_seconds>0` 时才短暂等待（测试/运维脚本用）。
     """
-    now = time.time()
-
-    # 缓存有效期内直接返回（2小时）
     with _stock_data_lock:
-        if _stock_data_cache['df'] is not None and (now - _stock_data_cache['last_update']) < 7200:
-            return _stock_data_cache['df']
+        df = _stock_data_cache['df']
+        loading = _stock_data_cache['loading']
+        load_error = _stock_data_cache['load_error']
 
-        # 如果正在加载，等待加载完成
-        if _stock_data_cache['loading']:
-            pass  # 释放锁后等待
-        else:
-            # 没有在加载，开始加载
-            _stock_data_cache['loading'] = True
-            _stock_data_cache['load_error'] = None
-            _stock_data_cache['load_start_time'] = now
-            # 在锁内启动加载线程
-            t = threading.Thread(target=_load_stock_data, daemon=True)
-            t.start()
+    if df is not None:
+        return df
 
-    # 等待加载完成
-    wait_start = time.time()
-    while _stock_data_cache['loading'] and (time.time() - wait_start) < 120:
-        time.sleep(1)
+    if wait_seconds and wait_seconds > 0:
+        deadline = time.time() + wait_seconds
+        while time.time() < deadline:
+            time.sleep(0.2)
+            with _stock_data_lock:
+                if _stock_data_cache['df'] is not None:
+                    return _stock_data_cache['df']
+                if not _stock_data_cache['loading']:
+                    break
 
+    if load_error:
+        print(f"[get_stock_data] 数据不可用: {load_error}")
+    elif loading:
+        print("[get_stock_data] 数据仍在加载，直接返回 None（不阻塞请求）")
+    return None
+
+
+def stock_data_age():
+    """返回当前快照的数据年龄（秒）；没有数据时返回 None。"""
     with _stock_data_lock:
-        if _stock_data_cache['df'] is not None:
-            return _stock_data_cache['df']
-        if _stock_data_cache['load_error']:
-            print(f"[get_stock_data] 加载失败: {_stock_data_cache['load_error']}")
-        return None
+        if _stock_data_cache['df'] is None:
+            return None
+        last_update = _stock_data_cache['last_update']
+    return max(0.0, time.time() - last_update) if last_update else None
+
+
+def stock_data_error():
+    """返回最近一次加载失败原因（没有失败过则为 None）。"""
+    with _stock_data_lock:
+        return _stock_data_cache['load_error']
+
+
+def stock_data_is_loading():
+    with _stock_data_lock:
+        return _stock_data_cache['loading']
 
 
 # ==================== 腾讯财经 API ====================
@@ -465,11 +488,23 @@ def _load_stock_data():
                     print(f"[get_stock_data] TickFlow也失败: {e4}")
 
             if df is not None and not df.empty:
+                # 归一化与基本面补充只做一次（不在请求路径里做）
+                df = normalize_stock_data(df)
+                try:
+                    df = _enrich_with_tencent(df)
+                except Exception as e:
+                    print(f"[get_stock_data] 基本面补充失败(忽略): {e}")
+
                 with _stock_data_lock:
                     _stock_data_cache['df'] = df
                     _stock_data_cache['last_update'] = time.time()
                     _stock_data_cache['load_error'] = None
+                    # 关键修复：旧实现在成功后没有复位 loading，
+                    # 导致 /api/stock/data_status 永远显示“加载中”
+                    _stock_data_cache['loading'] = False
                     print(f"[get_stock_data] 数据加载完成, {len(df)} 行")
+
+                _save_snapshot(df)
                 return
 
             # 所有接口都失败，等待后重试
@@ -492,7 +527,9 @@ def _load_stock_data():
 
 
 def warmup_stock_data():
-    """后台预热股票数据"""
+    """后台预热股票数据（幂等；后台刷新线程已覆盖，这里作为兜底）"""
+    if os.environ.get('DISABLE_BACKGROUND_REFRESH') == '1':
+        return
     with _stock_data_lock:
         if _stock_data_cache['loading'] or (_stock_data_cache['df'] is not None and (time.time() - _stock_data_cache['last_update']) < 7200):
             return
@@ -503,8 +540,145 @@ def warmup_stock_data():
     t.start()
 
 
-# 启动时预热
-warmup_stock_data()
+# ==================== 数据快照与定时刷新 ====================
+#
+# 目标（AUDIT_REPORT.md P2-2）：把“请求内加载全量行情”改成“后台定时拉取 +
+# 请求只读缓存”，并让进程重启后能先用上次快照顶上。
+
+_SNAPSHOT_DIR = os.environ.get(
+    'STOCK_SNAPSHOT_DIR',
+    os.path.join(os.path.dirname(os.path.abspath(__file__)), '.cache'),
+)
+_SNAPSHOT_PATH = os.path.join(_SNAPSHOT_DIR, 'stock_snapshot.json.gz')
+_SNAPSHOT_MAX_AGE = int(os.environ.get('STOCK_SNAPSHOT_MAX_AGE_SECONDS', '86400'))
+_REFRESH_SECONDS = int(os.environ.get('STOCK_DATA_REFRESH_SECONDS', '60'))
+_OFFHOURS_REFRESH_SECONDS = int(os.environ.get('STOCK_DATA_OFFHOURS_REFRESH_SECONDS', '1800'))
+
+
+def _beijing_now(ts=None):
+    """UTC 时间戳 -> 北京时间（避免引入 pytz 依赖）"""
+    moment = datetime.fromtimestamp(ts, tz=timezone.utc) if ts else datetime.now(timezone.utc)
+    return moment + timedelta(hours=8)
+
+
+def is_trading_time(ts=None):
+    """A股交易时段：周一~周五 09:15-11:30、13:00-15:05（北京时间）"""
+    local = _beijing_now(ts)
+    if local.weekday() >= 5:
+        return False
+    minutes = local.hour * 60 + local.minute
+    return (9 * 60 + 15 <= minutes <= 11 * 60 + 30) or (13 * 60 <= minutes <= 15 * 60 + 5)
+
+
+def _save_snapshot(df):
+    """把当前快照落盘，进程重启后可直接使用（Render 空闲会回收实例）"""
+    if df is None or df.empty:
+        return
+    try:
+        os.makedirs(_SNAPSHOT_DIR, exist_ok=True)
+        payload = {'saved_at': time.time(), 'rows': df.to_dict('records')}
+        tmp_path = _SNAPSHOT_PATH + '.tmp'
+        with gzip.open(tmp_path, 'wt', encoding='utf-8') as fh:
+            json.dump(payload, fh, ensure_ascii=False)
+        os.replace(tmp_path, _SNAPSHOT_PATH)
+        print(f"[snapshot] 已保存 {len(df)} 行 -> {_SNAPSHOT_PATH}")
+    except Exception as e:
+        print(f"[snapshot] 保存失败: {e}")
+
+
+def load_snapshot():
+    """启动时加载上次快照（超过 _SNAPSHOT_MAX_AGE 则忽略）。成功返回 True。"""
+    try:
+        if not os.path.exists(_SNAPSHOT_PATH):
+            return False
+        with gzip.open(_SNAPSHOT_PATH, 'rt', encoding='utf-8') as fh:
+            payload = json.load(fh)
+        saved_at = float(payload.get('saved_at') or 0)
+        rows = payload.get('rows') or []
+        if not rows:
+            return False
+        if saved_at and (time.time() - saved_at) > _SNAPSHOT_MAX_AGE:
+            print(f"[snapshot] 快照已过期({(time.time() - saved_at) / 3600:.1f}h)，忽略")
+            return False
+
+        df = pd.DataFrame(rows)
+        with _stock_data_lock:
+            _stock_data_cache['df'] = df
+            _stock_data_cache['last_update'] = saved_at
+            _stock_data_cache['load_error'] = None
+            _stock_data_cache['loading'] = False
+        age_min = (time.time() - saved_at) / 60 if saved_at else 0
+        print(f"[snapshot] 已加载快照 {len(df)} 行（{age_min:.0f} 分钟前）")
+        return True
+    except Exception as e:
+        print(f"[snapshot] 读取失败: {e}")
+        return False
+
+
+def _refresh_once():
+    """执行一次刷新：加载 -> 归一化 -> 补充基本面 -> 落盘。成功返回 True。"""
+    with _stock_data_lock:
+        if _stock_data_cache['loading']:
+            return False
+        _stock_data_cache['loading'] = True
+        _stock_data_cache['load_error'] = None
+        _stock_data_cache['load_start_time'] = time.time()
+    try:
+        _load_stock_data()
+    except Exception as e:
+        with _stock_data_lock:
+            _stock_data_cache['load_error'] = str(e)
+        print(f"[refresh] 刷新异常: {e}")
+    finally:
+        with _stock_data_lock:
+            _stock_data_cache['loading'] = False
+            loaded = _stock_data_cache['df'] is not None
+    return loaded
+
+
+def start_background_refresh():
+    """启动后台刷新线程（随进程启动，不在请求路径里跑）"""
+    def loop():
+        while True:
+            try:
+                _refresh_once()
+            except Exception as e:  # 任何异常都不能让刷新线程退出
+                print(f"[refresh] 刷新循环异常: {e}")
+            interval = _REFRESH_SECONDS if is_trading_time() else _OFFHOURS_REFRESH_SECONDS
+            print(f"[refresh] 下次刷新将在 {interval}s 后")
+            time.sleep(max(5, interval))
+
+    thread = threading.Thread(target=loop, name='stock-data-refresh', daemon=True)
+    thread.start()
+    print('[refresh] 后台刷新线程已启动')
+    return thread
+
+
+# 启动顺序：先读快照（冷启动即可服务），再开后台刷新
+if load_snapshot():
+    print('[snapshot] 冷启动使用快照数据，后台正在刷新真实行情')
+
+if os.environ.get('DISABLE_BACKGROUND_REFRESH') != '1':
+    start_background_refresh()
+
+
+def _data_not_ready_response():
+    """行情数据尚未就绪时的统一响应（HTTP 200，客户端按 success=false 处理）。"""
+    error = stock_data_error()
+    if error:
+        return jsonify({
+            'success': False,
+            'error': '行情数据暂时不可用，请稍后重试',
+            'detail': error,
+            'data': [],
+        })
+    return jsonify({
+        'success': False,
+        'error': '行情数据正在准备中，请稍后重试',
+        'loading': stock_data_is_loading(),
+        'retry_after': 10,
+        'data': [],
+    })
 
 
 @app.route('/health', methods=['GET'])
@@ -527,9 +701,13 @@ def stock_data_status():
         load_start = _stock_data_cache['load_start_time']
         elapsed = time.time() - load_start if is_loading and load_start > 0 else 0
 
-    # 如果数据未加载且未在加载，触发预热
+    # 兜底预热（后台刷新线程未开启时才会真正生效）
     if not is_loaded and not is_loading:
         warmup_stock_data()
+
+    age = (time.time() - last_update) if (is_loaded and last_update) else None
+    # 交易时段内超过 10 分钟视为过期；非交易时段放宽到 12 小时
+    stale_after = 600 if is_trading_time() else 12 * 3600
 
     return jsonify({
         'success': True,
@@ -537,8 +715,13 @@ def stock_data_status():
         'loading': is_loading,
         'row_count': row_count,
         'last_update': last_update,
+        'age_seconds': round(age, 1) if age is not None else None,
+        'stale': bool(age is not None and age > stale_after),
         'load_error': load_error,
         'loading_elapsed': round(elapsed, 1) if is_loading else 0,
+        'trading_time': is_trading_time(),
+        'refresh_interval': _REFRESH_SECONDS if is_trading_time() else _OFFHOURS_REFRESH_SECONDS,
+        'snapshot_enabled': True,
     })
 
 
@@ -1036,7 +1219,7 @@ def stock_screen():
         # 获取A股实时行情数据（使用全局缓存）
         df = get_stock_data()
         if df is None:
-            return jsonify({'success': False, 'error': '无法获取股票数据，请稍后重试', 'data': []}), 200
+            return _data_not_ready_response()
 
         # 标准化列名
         df = normalize_stock_data(df)
@@ -1178,7 +1361,7 @@ def stock_recommend():
         # 获取A股实时数据（使用全局缓存）
         df = get_stock_data()
         if df is None:
-            return jsonify({'success': False, 'error': '无法获取股票数据，请稍后重试', 'data': []}), 200
+            return _data_not_ready_response()
 
         # 标准化列名
         df = normalize_stock_data(df)

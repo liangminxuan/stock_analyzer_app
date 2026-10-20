@@ -20,4 +20,5 @@ COPY ai_engine.py .
 EXPOSE 5000
 
 # 使用环境变量端口（Render 等平台会动态分配端口）
-CMD ["sh", "-c", "gunicorn --bind 0.0.0.0:${PORT:-5000} --workers 2 --timeout 120 app:app"]
+# 单 worker + 多线程：行情快照缓存在进程内，多 worker 会重复加载
+CMD ["sh", "-c", "gunicorn --bind 0.0.0.0:${PORT:-5000} --workers 1 --threads 8 --timeout 60 app:app"]
