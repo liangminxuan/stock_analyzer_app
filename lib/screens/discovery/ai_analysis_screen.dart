@@ -1,77 +1,96 @@
 import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
-import 'package:get/get.dart';
 import '../../services/backend_service.dart';
 
 import '../../utils/logger.dart';
+import '../../utils/num_utils.dart';
 
 /// AI 对冲基金选股分析页面
 /// 基于 virattt/ai-hedge-fund 项目的策略
 /// 使用 GetX 状态管理
-class AIAnalysisScreen extends StatelessWidget {
+/// AI 对冲基金选股分析页面
+/// 基于 virattt/ai-hedge-fund 项目的策略
+class AIAnalysisScreen extends StatefulWidget {
   const AIAnalysisScreen({super.key});
 
   @override
+  State<AIAnalysisScreen> createState() => _AIAnalysisScreenState();
+}
+
+class _AIAnalysisScreenState extends State<AIAnalysisScreen> {
+  late final AIAnalysisController _controller;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = AIAnalysisController();
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
-    // 确保控制器已注册
-    return GetBuilder<AIAnalysisController>(
-      init: AIAnalysisController(),
-      builder: (controller) {
-        return Scaffold(
-          appBar: AppBar(
-            title: Text(
-              'AI 对冲基金分析',
-              style: TextStyle(fontSize: 20.sp, fontWeight: FontWeight.bold),
-            ),
-          ),
-          body: Obx(() {
-            if (controller.isLoading.value) {
-              return Center(
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    const CircularProgressIndicator(),
-                    SizedBox(height: 16.h),
-                    Text(
-                      controller.loadingMessage.value,
-                      style: TextStyle(fontSize: 14.sp, color: Colors.grey[600]),
-                    ),
-                  ],
-                ),
-              );
-            }
+    final controller = _controller;
+    return Scaffold(
+      appBar: AppBar(
+        title: Text(
+          'AI 对冲基金分析',
+          style: TextStyle(fontSize: 20.sp, fontWeight: FontWeight.bold),
+        ),
+      ),
+      body: ListenableBuilder(
+        listenable: controller,
+        builder: (context, _) {
+          if (controller.isLoading) {
+            return Center(
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  const CircularProgressIndicator(),
+                  SizedBox(height: 16.h),
+                  Text(
+                    controller.loadingMessage,
+                    style: TextStyle(fontSize: 14.sp, color: Colors.grey[600]),
+                  ),
+                ],
+              ),
+            );
+          }
 
-            if (controller.hasError.value) {
-              return Center(
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    Icon(Icons.error_outline, size: 64.sp, color: Colors.grey),
-                    SizedBox(height: 16.h),
-                    Text(
-                      controller.errorMessage.value,
-                      style: TextStyle(color: Colors.grey, fontSize: 14.sp),
-                      textAlign: TextAlign.center,
-                    ),
-                    SizedBox(height: 16.h),
-                    ElevatedButton(
-                      onPressed: () => controller.startAnalysis(),
-                      child: const Text('重试'),
-                    ),
-                  ],
-                ),
-              );
-            }
+          if (controller.hasError) {
+            return Center(
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(Icons.error_outline, size: 64.sp, color: Colors.grey),
+                  SizedBox(height: 16.h),
+                  Text(
+                    controller.errorMessage,
+                    style: TextStyle(color: Colors.grey, fontSize: 14.sp),
+                    textAlign: TextAlign.center,
+                  ),
+                  SizedBox(height: 16.h),
+                  ElevatedButton(
+                    onPressed: () => controller.startAnalysis(),
+                    child: const Text('重试'),
+                  ),
+                ],
+              ),
+            );
+          }
 
-            if (controller.analysisData.value == null) {
-              return _buildInputView(context, controller);
-            }
+          if (controller.analysisData == null) {
+            return _buildInputView(context, controller);
+          }
 
-            return _buildResultView(context, controller);
-          }),
-        );
-      },
+          return _buildResultView(context, controller);
+        },
+      ),
     );
   }
 
@@ -194,7 +213,7 @@ class AIAnalysisScreen extends StatelessWidget {
               prefixIcon: Icon(Icons.search, size: 20.sp, color: Colors.grey[400]),
               counterText: '',
             ),
-            onChanged: (value) => controller.stockCode.value = value.trim(),
+            onChanged: controller.updateStockCode,
           ),
         ),
         SizedBox(width: 12.w),
@@ -220,7 +239,7 @@ class AIAnalysisScreen extends StatelessWidget {
   /// 开始分析按钮（底部大按钮）
   Widget _buildStartButton(BuildContext context, AIAnalysisController controller) {
     return ElevatedButton(
-      onPressed: controller.stockCode.value.length == 6
+      onPressed: controller.stockCode.length == 6
           ? controller.startAnalysis
           : null,
       style: ElevatedButton.styleFrom(
@@ -282,14 +301,23 @@ class AIAnalysisScreen extends StatelessWidget {
                     children: [
                       Row(
                         children: [
-                          Text(
-                            s['name'] as String,
-                            style: TextStyle(fontSize: 14.sp, fontWeight: FontWeight.w600),
+                          // 窄屏/大字体下两段文本会撑破 Row，这里允许收缩并省略
+                          Flexible(
+                            child: Text(
+                              s['name'] as String,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(fontSize: 14.sp, fontWeight: FontWeight.w600),
+                            ),
                           ),
                           SizedBox(width: 8.w),
-                          Text(
-                            s['en'] as String,
-                            style: TextStyle(fontSize: 11.sp, color: Colors.grey[500]),
+                          Flexible(
+                            child: Text(
+                              s['en'] as String,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(fontSize: 11.sp, color: Colors.grey[500]),
+                            ),
                           ),
                         ],
                       ),
@@ -311,7 +339,7 @@ class AIAnalysisScreen extends StatelessWidget {
 
   /// 结果视图
   Widget _buildResultView(BuildContext context, AIAnalysisController controller) {
-    final data = controller.analysisData.value!;
+    final data = controller.analysisData!;
 
     return SingleChildScrollView(
       padding: EdgeInsets.all(16.w),
@@ -351,9 +379,8 @@ class AIAnalysisScreen extends StatelessWidget {
           // 重新分析按钮
           OutlinedButton.icon(
             onPressed: () {
-              controller.analysisData.value = null;
               controller.codeController.clear();
-              controller.stockCode.value = '';
+              controller.reset();
             },
             icon: const Icon(Icons.refresh),
             label: const Text('分析其他股票'),
@@ -1248,31 +1275,34 @@ class _GaugePainter extends CustomPainter {
   }
 }
 
-/// AI 分析控制器
-class AIAnalysisController extends GetxController {
+/// AI 分析控制器（ChangeNotifier，替代原先的 GetX 实现）
+class AIAnalysisController extends ChangeNotifier {
   final BackendService _backendService = BackendService();
 
   final TextEditingController codeController = TextEditingController();
-  final stockCode = ''.obs;
-  final isLoading = false.obs;
-  final loadingMessage = '正在分析中...'.obs;
-  final hasError = false.obs;
-  final errorMessage = ''.obs;
-  final analysisData = Rx<Map<String, dynamic>?>(null);
+
+  String stockCode = '';
+  bool isLoading = false;
+  String loadingMessage = '正在分析中...';
+  bool hasError = false;
+  String errorMessage = '';
+  Map<String, dynamic>? analysisData;
 
   /// 开始分析
   Future<void> startAnalysis() async {
-    final code = stockCode.value.trim();
+    final code = stockCode.trim();
     if (code.length != 6) {
-      hasError.value = true;
-      errorMessage.value = '请输入正确的6位股票代码';
+      hasError = true;
+      errorMessage = '请输入正确的6位股票代码';
+      notifyListeners();
       return;
     }
 
-    isLoading.value = true;
-    hasError.value = false;
-    errorMessage.value = '';
-    loadingMessage.value = '正在获取 $code 的 AI 分析数据...';
+    isLoading = true;
+    hasError = false;
+    errorMessage = '';
+    loadingMessage = '正在获取 $code 的 AI 分析数据...';
+    notifyListeners();
 
     try {
       final response = await _backendService.dio.get(
@@ -1280,26 +1310,46 @@ class AIAnalysisController extends GetxController {
         queryParameters: {'code': code},
       );
 
-      final data = response.data as Map<String, dynamic>;
-
-      if (data['success'] == true) {
-        analysisData.value = Map<String, dynamic>.from(data);
+      final data = asMap(response.data);
+      if (data == null) {
+        hasError = true;
+        errorMessage = '返回数据格式异常，请稍后重试';
+      } else if (data['success'] == true) {
+        analysisData = data;
       } else {
-        hasError.value = true;
-        errorMessage.value = (data['error'] as String?) ?? (data['message'] as String?) ?? '分析失败，请稍后重试';
+        hasError = true;
+        errorMessage = (data['error'] as String?) ??
+            (data['message'] as String?) ??
+            '分析失败，请稍后重试';
       }
     } catch (e) {
       logDebug('[AIAnalysis] 分析失败: $e');
-      hasError.value = true;
-      errorMessage.value = '网络请求失败，请检查网络连接后重试';
+      hasError = true;
+      errorMessage = '网络请求失败，请检查网络连接后重试';
     } finally {
-      isLoading.value = false;
+      isLoading = false;
+      notifyListeners();
     }
   }
 
+  /// 输入框变化（内部通知刷新，用于“开始分析”按钮的可用状态）
+  void updateStockCode(String value) {
+    stockCode = value.trim();
+    notifyListeners();
+  }
+
+  /// 清空结果，回到输入态
+  void reset() {
+    analysisData = null;
+    stockCode = '';
+    hasError = false;
+    errorMessage = '';
+    notifyListeners();
+  }
+
   @override
-  void onClose() {
+  void dispose() {
     codeController.dispose();
-    super.onClose();
+    super.dispose();
   }
 }

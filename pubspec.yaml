@@ -17,7 +17,6 @@ dependencies:
 
   # 状态管理
   provider: ^6.1.1
-  get: ^4.6.6
 
   # UI组件
   flutter_screenutil: ^5.9.0

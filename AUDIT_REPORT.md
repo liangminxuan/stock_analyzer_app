@@ -473,7 +473,7 @@ git ls-files | wc -l                       # → 635 → 131
 | P1-1 | 缓存返回未补全数据 | 已修 | 缓存数据本身并回填（`_tencent_fundamentals_cache`） | `test_cache_and_enrich.py` |
 | P1-2 | 缓存无界 + 全局状态 | 部分 | 缓存加 TTL + LRU（上限 256）；分层重构未做 | `test_cache_and_enrich.py` |
 | P1-3 | 无鉴权 / debug 暴露 | 已修 | debug 端点默认 404；CORS 默认不放行；单 IP 滑动窗口限流 | `test_rate_limit_and_cors.py` |
-| P1-4 | Provider + GetX 混用 | 未做 | 需重构 1300 行页面，非缺陷 | — |
+| P1-4 | Provider + GetX 混用 | 已修 | AI 分析页改 ChangeNotifier + ListenableBuilder，移除 `get` 依赖；补 5 个 widget/控制器测试 | `test/screens/ai_analysis_screen_test.dart` |
 | P1-5 | 静默失败 / 无 mounted | 已修 | Provider 暴露错误并清空脏数据；13 处补 `mounted`；63 处 print → logger | `stock_provider_test.dart` |
 | P1-6 | 无本地持久化 | 已修 | `shared_preferences` + `UserDataStore` 抽象 | `user_provider_test.dart` 重启恢复用例 |
 | P1-7 | GBK 名称乱码 | 已修 | 名称改走腾讯搜索接口（UTF-8）解析并缓存 | 行情/列表用例断言中文名 |
@@ -491,7 +491,6 @@ git ls-files | wc -l                       # → 635 → 131
 1. **`applicationId` 仍为 `com.example.stock_analyzer_app`** —— 改包名会导致已安装用户无法覆盖升级，需产品确认时机。
 2. **应用图标只有 `mipmap-hdpi`** —— 需要设计资源，无法在代码层解决。
 3. **错误上报与埋点** —— 需接入外部账号。
-4. **`get`(GetX) 与 `provider` 并存** —— 仅 AI 分析页使用，统一需重构该页。
 5. **`.github/workflows/build_apk.yml`** —— 推送令牌无 `workflows` 权限，门禁改动以 `docs/ci/build_apk.yml.proposed` 提供。
 6. **`lib/config/constants.dart`、`lib/models/{financial,announcement}.dart`** —— 共 1450 行仍未被引用（可编译、无缺陷）；建议随财报/公告页重构一并接入或删除。
 

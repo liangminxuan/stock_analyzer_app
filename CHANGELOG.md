@@ -44,7 +44,9 @@
 - 自选股本地持久化，重启不再丢失（P1-6）
 - 删除 6 个不可达/损坏文件（含 4 处编译错误）
 - 不再跟踪构建产物与 APK（跟踪文件 635 → 122）
-- 移除未使用依赖 `fl_chart`
+- 移除未使用依赖 `fl_chart`；移除 `get`(GetX)，AI 分析页改用 `ChangeNotifier` + `ListenableBuilder`（P1-4）
+- JSON 数值类型安全：int/double/字符串混用不再崩溃（新增 `lib/utils/num_utils.dart`）
+- 修复 AI 分析页策略列表在窄屏/大字体下的 RenderFlex 溢出
 - 新增 LICENSE、本 CHANGELOG，文档与实现对齐（P2-6）
 
 ### 已知未完成（需要产品/运维决策）
