@@ -1,4 +1,8 @@
 /// 财务数据模型
+library;
+
+import '../utils/num_utils.dart';
+
 class FinancialData {
   final String code;                      // 股票代码
   final String name;                      // 股票名称
@@ -416,7 +420,7 @@ class FinancialAnalysis {
       solvencyAnalysis: json['solvencyAnalysis'] as String? ?? '',
       efficiencyAnalysis: json['efficiencyAnalysis'] as String? ?? '',
       cashFlowAnalysis: json['cashFlowAnalysis'] as String? ?? '',
-      healthScore: (json['healthScore'] as int?) ?? 0,
+      healthScore: asInt(json['healthScore']),
       healthLevel: json['healthLevel'] as String? ?? '',
       riskWarnings: (json['riskWarnings'] as List<dynamic>?)
               ?.map((e) => e as String)

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 import '../../config/routes.dart';
 import '../../services/discovery_service.dart';
+import '../../utils/num_utils.dart';
 
 import '../../utils/logger.dart';
 
@@ -990,9 +991,10 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
       );
 
       if (!mounted) return;
-      if (result['success'] == true && (result['data'] as List).isNotEmpty) {
+      final recommended = asList<Map<String, dynamic>>(result['data']);
+      if (result['success'] == true && recommended.isNotEmpty) {
         setState(() {
-          _screenResults = List<Map<String, dynamic>>.from(result['data']);
+          _screenResults = recommended;
           _totalResults = result['count'] ?? _screenResults.length;
           _loadingMessage = '';
         });
@@ -1049,7 +1051,7 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
 
   /// 构建股票卡片
   Widget _buildStockCard(Map<String, dynamic> stock, int rank) {
-    final changePercent = (stock['change_percent'] ?? 0) as double;
+    final changePercent = asDouble(stock['change_percent']);
     final isPositive = changePercent >= 0;
 
     return Card(

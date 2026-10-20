@@ -1,4 +1,8 @@
 /// 公告模型
+library;
+
+import '../utils/num_utils.dart';
+
 class Announcement {
   final String id;                        // 公告ID
   final String code;                      // 股票代码
@@ -189,7 +193,7 @@ class AnnouncementAnalysis {
       type: json['type'] as String? ?? '',
       typeDescription: json['typeDescription'] as String? ?? '',
       sentiment: json['sentiment'] as String? ?? 'neutral',
-      sentimentScore: (json['sentimentScore'] as int?) ?? 0,
+      sentimentScore: asInt(json['sentimentScore']),
       summary: json['summary'] as String? ?? '',
       keyPoints: (json['keyPoints'] as List<dynamic>?)
               ?.map((e) => e as String)
@@ -203,7 +207,7 @@ class AnnouncementAnalysis {
               ?.map((e) => e as String)
               .toList() ??
           [],
-      confidenceLevel: (json['confidenceLevel'] as int?) ?? 0,
+      confidenceLevel: asInt(json['confidenceLevel']),
     );
   }
 
@@ -421,8 +425,8 @@ class AnnouncementStats {
         [];
 
     return AnnouncementStats(
-      totalCount: (json['totalCount'] as int?) ?? 0,
-      todayCount: (json['todayCount'] as int?) ?? 0,
+      totalCount: asInt(json['totalCount']),
+      todayCount: asInt(json['todayCount']),
       typeDistribution: typeDist,
       importantList: important,
     );

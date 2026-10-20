@@ -1,4 +1,8 @@
 /// K线数据模型
+library;
+
+import '../utils/num_utils.dart';
+
 class KLineData {
   final DateTime time;           // 时间
   final double open;             // 开盘价
@@ -35,7 +39,7 @@ class KLineData {
       high: (json['high'] as num?)?.toDouble() ?? 0.0,
       low: (json['low'] as num?)?.toDouble() ?? 0.0,
       close: (json['close'] as num?)?.toDouble() ?? 0.0,
-      volume: (json['volume'] as int?) ?? 0,
+      volume: asInt(json['volume']),
       amount: (json['amount'] as num?)?.toDouble() ?? 0.0,
       ma5: (json['ma5'] as num?)?.toDouble(),
       ma10: (json['ma10'] as num?)?.toDouble(),
@@ -207,7 +211,7 @@ class KLineAnalysis {
       resistanceLevel: (json['resistanceLevel'] as num?)?.toDouble() ?? 0.0,
       technicalSummary: json['technicalSummary'] as String? ?? '',
       tradingAdvice: json['tradingAdvice'] as String? ?? '',
-      confidenceScore: (json['confidenceScore'] as int?) ?? 0,
+      confidenceScore: asInt(json['confidenceScore']),
       riskWarnings: (json['riskWarnings'] as List<dynamic>?)
               ?.map((e) => e as String)
               .toList() ??

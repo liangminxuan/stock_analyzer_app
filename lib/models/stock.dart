@@ -1,4 +1,8 @@
 /// 股票基础信息模型
+library;
+
+import '../utils/num_utils.dart';
+
 class Stock {
   final String code;                    // 股票代码
   final String name;                    // 股票名称
@@ -58,7 +62,7 @@ class Stock {
       lowPrice: (json['lowPrice'] as num?)?.toDouble() ?? 0.0,
       change: (json['change'] as num?)?.toDouble() ?? 0.0,
       changePercent: (json['changePercent'] as num?)?.toDouble() ?? 0.0,
-      volume: (json['volume'] as int?) ?? 0,
+      volume: asInt(json['volume']),
       turnover: (json['turnover'] as num?)?.toDouble() ?? 0.0,
       bidPrices: (json['bidPrices'] as List<dynamic>?)
               ?.map((e) => (e as num).toDouble())
@@ -220,58 +224,45 @@ class Stock {
 
   /// 从API数据解析（通用方法）
   factory Stock.fromQuote(Map<String, dynamic> data) {
-    final market = data['market'] as String? ?? 'sh';
-    final code = data['code'] as String? ?? '';
-    
-    double currentPrice = 0.0;
-    double previousClose = 0.0;
-    double change = 0.0;
-    double changePercent = 0.0;
-    
-    // 从 currentPrice 和 previousClose 计算涨跌
+    final market = data['market']?.toString() ?? 'sh';
+    final code = data['code']?.toString() ?? '';
+
+    // 注意：后端（Python）可能把同一个字段序列化成 int 或 double，
+    // 历史实现用 `as num` 强转，遇到字符串/空值时整页会崩，这里统一走安全转换。
+    final currentPrice = asDouble(data['currentPrice']);
+    final previousClose = asDouble(data['previousClose']);
+    var change = asDouble(data['change']);
+    var changePercent = asDouble(data['changePercent']);
+    var previousCloseResolved = previousClose;
+
     if (data['currentPrice'] != null && data['previousClose'] != null) {
-      currentPrice = (data['currentPrice'] as num).toDouble();
-      previousClose = (data['previousClose'] as num).toDouble();
       change = currentPrice - previousClose;
-      if (previousClose != 0) {
-        changePercent = (change / previousClose) * 100;
-      }
+      changePercent = previousClose != 0 ? (change / previousClose) * 100 : 0.0;
     } else if (data['change'] != null && data['changePercent'] != null) {
-      change = (data['change'] as num).toDouble();
-      changePercent = (data['changePercent'] as num).toDouble();
       if (data['currentPrice'] != null) {
-        currentPrice = (data['currentPrice'] as num).toDouble();
-        previousClose = currentPrice - change;
+        previousCloseResolved = currentPrice - change;
       }
     }
 
     return Stock(
       code: code,
-      name: data['name'] as String? ?? '未知',
+      name: data['name']?.toString() ?? '未知',
       market: market,
       currentPrice: currentPrice,
-      previousClose: previousClose,
-      openPrice: (data['open'] as num?)?.toDouble() ?? 0.0,
-      highPrice: (data['high'] as num?)?.toDouble() ?? 0.0,
-      lowPrice: (data['low'] as num?)?.toDouble() ?? 0.0,
+      previousClose: previousCloseResolved,
+      openPrice: asDouble(data['open']),
+      highPrice: asDouble(data['high']),
+      lowPrice: asDouble(data['low']),
       change: change,
       changePercent: changePercent,
-      volume: (data['volume'] as num?)?.toInt() ?? 0,
-      turnover: (data['turnover'] as num?)?.toDouble() ?? 0.0,
-      marketCap: (data['marketCap'] as num?)?.toDouble() ?? 0.0,
-      peRatio: (data['pe'] as num?)?.toDouble() ?? 0.0,
-      bidPrices: (data['bidPrices'] as List<dynamic>?)
-              ?.map((e) => (e as num).toDouble()).toList() ??
-          [],
-      bidVolumes: (data['bidVolumes'] as List<dynamic>?)
-              ?.map((e) => (e as num).toInt()).toList() ??
-          [],
-      askPrices: (data['askPrices'] as List<dynamic>?)
-              ?.map((e) => (e as num).toDouble()).toList() ??
-          [],
-      askVolumes: (data['askVolumes'] as List<dynamic>?)
-              ?.map((e) => (e as num).toInt()).toList() ??
-          [],
+      volume: asInt(data['volume']),
+      turnover: asDouble(data['turnover']),
+      marketCap: asDouble(data['marketCap']),
+      peRatio: asDouble(data['pe']),
+      bidPrices: asList<num>(data['bidPrices']).map((e) => e.toDouble()).toList(),
+      bidVolumes: asList<num>(data['bidVolumes']).map((e) => e.toInt()).toList(),
+      askPrices: asList<num>(data['askPrices']).map((e) => e.toDouble()).toList(),
+      askVolumes: asList<num>(data['askVolumes']).map((e) => e.toInt()).toList(),
     );
   }
 
@@ -425,7 +416,7 @@ class StockItem {
       market: json['market'] as String? ?? '',
       price: (json['price'] as num?)?.toDouble() ?? 0.0,
       changePercent: (json['changePercent'] as num?)?.toDouble() ?? 0.0,
-      volume: (json['volume'] as int?) ?? 0,
+      volume: asInt(json['volume']),
     );
   }
 
@@ -513,7 +504,7 @@ class MarketIndex {
       currentPoint: (json['currentPoint'] as num?)?.toDouble() ?? 0.0,
       change: (json['change'] as num?)?.toDouble() ?? 0.0,
       changePercent: (json['changePercent'] as num?)?.toDouble() ?? 0.0,
-      volume: (json['volume'] as int?) ?? 0,
+      volume: asInt(json['volume']),
       turnover: (json['turnover'] as num?)?.toDouble() ?? 0.0,
     );
   }
